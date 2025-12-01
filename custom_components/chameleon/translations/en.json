@@ -1,0 +1,33 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Chameleon",
+        "description": "Set up Chameleon to apply image colors to your lights.",
+        "data": {
+          "light_entity": "Light Entity",
+          "animation_enabled": "Enable Animation Mode",
+          "animation_speed": "Animation Speed"
+        },
+        "data_description": {
+          "light_entity": "The RGB light to control with scene colors",
+          "animation_enabled": "Continuously cycle through colors from the image",
+          "animation_speed": "Seconds between color transitions"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This light is already configured with Chameleon"
+    },
+    "error": {
+      "unknown": "Unexpected error occurred"
+    }
+  },
+  "entity": {
+    "select": {
+      "scene": {
+        "name": "Scene"
+      }
+    }
+  }
+}

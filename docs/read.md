@@ -20,6 +20,7 @@ This document contains essential knowledge for building the Chameleon integratio
 ### What is a Custom Integration?
 
 A custom integration is a Python package that extends Home Assistant's functionality. It can:
+
 - Create new entities (lights, sensors, switches, selects, etc.)
 - Provide services that can be called from automations
 - Listen to events and react to state changes
@@ -47,7 +48,7 @@ Defines integration metadata:
   "domain": "chameleon",
   "name": "Chameleon",
   "version": "0.1.0",
-  "documentation": "https://github.com/user/image-scene-colorizer",
+  "documentation": "https://github.com/user/ha-chameleon",
   "requirements": ["Pillow==10.0.0", "colorthief==0.2.1"],
   "codeowners": ["@yourusername"],
   "iot_class": "local_polling"
@@ -55,11 +56,12 @@ Defines integration metadata:
 ```
 
 **Key fields:**
+
 - `domain`: Unique identifier (use snake_case)
 - `requirements`: Python packages from PyPI
 - `iot_class`: How integration interacts (local_polling, cloud_polling, local_push, etc.)
 
-### __init__.py
+### **init**.py
 
 Entry point for the integration:
 
@@ -103,6 +105,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 A select entity represents a choice from a list of options. Like a dropdown menu.
 
 **Examples in HA:**
+
 - Thermostat fan mode (Auto, Low, Medium, High)
 - Scene profiles (Energize, Relax, Sleep)
 - Input selects (user-defined dropdowns)
@@ -110,6 +113,7 @@ A select entity represents a choice from a list of options. Like a dropdown menu
 ### How It Works
 
 **Three key components:**
+
 1. **Current option**: The selected value
 2. **Options list**: Available choices
 3. **Select callback**: What happens when user picks a new option
@@ -202,6 +206,7 @@ class ImageSceneSelect(SelectEntity):
 ### What is Config Flow?
 
 Config flow is the UI-based setup process:
+
 1. User clicks "Add Integration"
 2. Fills out a form
 3. Integration is configured (no YAML editing!)
@@ -289,6 +294,7 @@ This shows a nice dropdown of all light entities (with search!).
 ### Problem: Dominant Colors Aren't Enough
 
 Using just the dominant color from an image:
+
 - ❌ Boring for static application
 - ❌ Terrible for animation (jumps between few colors)
 - ❌ Doesn't capture image's full palette
@@ -388,6 +394,7 @@ def sample_spatial_colors(image_path: str, grid_size: int = 4) -> list[tuple]:
 ### The Challenge
 
 Create continuous, smooth color animation without:
+
 - Blocking the event loop
 - Killing the SD card with DB writes
 - Hogging CPU resources
@@ -497,6 +504,7 @@ class AnimationManager:
 ### The Problem
 
 Every time you change a light's state, Home Assistant:
+
 1. Writes the new state to the database
 2. Records history
 3. Triggers state change events
@@ -555,6 +563,7 @@ await hass.services.async_call("light", "turn_on", {
 ### Solution 3: Lower Frequency
 
 Don't update every second:
+
 - 1s interval = 86,400 writes/day ❌
 - 5s interval = 17,280 writes/day ⚠️
 - 10s interval = 8,640 writes/day ✅
@@ -580,8 +589,8 @@ for i in range(1000000):
 
 ```bash
 # Create project directory
-mkdir ~/image-scene-colorizer
-cd ~/image-scene-colorizer
+mkdir ~/ha-chameleon
+cd ~/ha-chameleon
 
 # Create integration directory
 mkdir -p custom_components/chameleon
@@ -595,7 +604,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8123:8123 \
   -v ~/ha-dev-config:/config \
-  -v ~/image-scene-colorizer/custom_components:/config/custom_components \
+  -v ~/ha-chameleon/custom_components:/config/custom_components \
   ghcr.io/home-assistant/home-assistant:stable
 
 # Access at http://localhost:8123
@@ -606,7 +615,7 @@ docker run -d \
 
 ```bash
 # 1. Edit code
-code ~/image-scene-colorizer
+code ~/ha-chameleon
 
 # 2. Reload integration
 # In HA: Developer Tools → YAML → Reload Integrations
@@ -641,7 +650,7 @@ light:
 ```bash
 # Sync to production server
 rsync -avz --delete \
-  ~/image-scene-colorizer/custom_components/chameleon/ \
+  ~/ha-chameleon/custom_components/chameleon/ \
   your-server:/config/custom_components/chameleon/
 
 # Restart production HA
@@ -656,51 +665,58 @@ ssh your-server "docker logs -f homeassistant"
 ## Key Learning Resources
 
 ### Official Documentation
-- **HA Developer Docs**: https://developers.home-assistant.io/
+
+- **HA Developer Docs**: <https://developers.home-assistant.io/>
   - Start here, comprehensive guides
-- **Architecture**: https://developers.home-assistant.io/docs/architecture_index
+- **Architecture**: <https://developers.home-assistant.io/docs/architecture_index>
   - Understand how HA works internally
-- **Config Entries**: https://developers.home-assistant.io/docs/config_entries_index
+- **Config Entries**: <https://developers.home-assistant.io/docs/config_entries_index>
   - UI-based configuration system
-- **Entity Platform**: https://developers.home-assistant.io/docs/core/entity
+- **Entity Platform**: <https://developers.home-assistant.io/docs/core/entity>
   - Base class for all entities
 
 ### Specific Guides
-- **Select Entity**: https://developers.home-assistant.io/docs/core/entity/select
-- **Config Flow**: https://developers.home-assistant.io/docs/config_entries_config_flow_handler
-- **Services**: https://developers.home-assistant.io/docs/dev_101_services
-- **Async Programming**: https://developers.home-assistant.io/docs/asyncio_working_with_async
+
+- **Select Entity**: <https://developers.home-assistant.io/docs/core/entity/select>
+- **Config Flow**: <https://developers.home-assistant.io/docs/config_entries_config_flow_handler>
+- **Services**: <https://developers.home-assistant.io/docs/dev_101_services>
+- **Async Programming**: <https://developers.home-assistant.io/docs/asyncio_working_with_async>
 
 ### Example Integrations to Study
 
 **1. Adaptive Lighting** (Your style inspiration)
-- GitHub: https://github.com/basnijholt/adaptive-lighting
+
+- GitHub: <https://github.com/basnijholt/adaptive-lighting>
 - Study: Config flow, multiple instances, entity creation
 
 **2. Scenery** (Select entity pattern)
-- GitHub: https://github.com/j9brown/scenery
+
+- GitHub: <https://github.com/j9brown/scenery>
 - Study: Select entities, profile management
 
 **3. Template** (Built-in, simple)
+
 - HA Core: `homeassistant/components/template/`
 - Study: Basic entity creation
 
 ### Python Libraries
 
 **Color Extraction**:
-- **Pillow**: https://pillow.readthedocs.io/
+
+- **Pillow**: <https://pillow.readthedocs.io/>
   - Image processing, pixel access
-- **colorthief**: https://github.com/fengsp/color-thief-py
+- **colorthief**: <https://github.com/fengsp/color-thief-py>
   - Palette extraction (uses k-means)
 
 **Async Programming**:
-- **asyncio docs**: https://docs.python.org/3/library/asyncio.html
+
+- **asyncio docs**: <https://docs.python.org/3/library/asyncio.html>
   - Essential for HA development
 
 ### Community
 
-- **HA Dev Community**: https://community.home-assistant.io/c/development/
-- **Discord**: https://discord.gg/home-assistant (dev channel)
+- **HA Dev Community**: <https://community.home-assistant.io/c/development/>
+- **Discord**: <https://discord.gg/home-assistant> (dev channel)
 - **GitHub Discussions**: Issues on HA core repo
 
 ---

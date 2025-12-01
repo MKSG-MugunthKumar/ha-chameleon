@@ -1,0 +1,40 @@
+# yamllint configuration for Chameleon Home Assistant Integration
+# Permissive settings that work well with HA YAML files
+
+rules:
+  braces:
+    max-spaces-inside: 1
+    max-spaces-inside-empty: 0
+  brackets:
+    max-spaces-inside: 1
+    max-spaces-inside-empty: 0
+  colons:
+    max-spaces-before: 0
+    max-spaces-after: 1
+  commas:
+    max-spaces-before: 0
+    max-spaces-after: 1
+  comments:
+    min-spaces-from-content: 2
+  document-start: disable  # Don't require --- at start
+  document-end: disable    # Don't require ... at end
+  empty-lines:
+    max: 2
+    max-start: 0
+    max-end: 1
+  empty-values: enable
+  hyphens:
+    max-spaces-after: 1
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  key-duplicates: enable
+  line-length:
+    max: 120
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+  new-line-at-end-of-file: enable
+  octal-values: enable
+  quoted-strings: disable  # Allow unquoted strings
+  trailing-spaces: enable
+  truthy: disable  # Allow yes/no, on/off values (common in HA)

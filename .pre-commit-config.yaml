@@ -1,0 +1,103 @@
+# Pre-commit configuration for Chameleon Home Assistant Integration
+# Install: uv tool install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: debug-statements
+      - id: check-ast
+
+  # Python linting, formatting, and import sorting with Ruff
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.1
+    hooks:
+      # Linter must run before formatter
+      - id: ruff
+        name: Lint Python code
+        args: [--fix, --exit-non-zero-on-fix]
+      # Formatter (replaces Black)
+      - id: ruff-format
+        name: Format Python code
+
+  # Python type checking with ty (Astral) - local hook until official pre-commit available
+  # See: https://github.com/astral-sh/ty/issues/269
+  - repo: local
+    hooks:
+      - id: ty
+        name: Type check Python code (ty)
+        entry: ty check
+        language: system
+        types: [python]
+        files: ^custom_components/
+        pass_filenames: false
+        # Remove this hook or set always_run: false if ty is not installed
+
+  # YAML linting
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: YAML linting
+        args: [-c=.yamllint.yml]
+
+  # Markdown auto-formatting
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        name: Markdown auto-formatting
+        types: [markdown]
+        args: ['--write', '--prose-wrap', 'preserve', '--print-width', '9999']
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.43.0
+    hooks:
+      - id: markdownlint
+        name: Markdown linting
+        args: ['--config', '.markdownlint.json', '--fix']
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        name: Shell script linting
+        args: [--severity=warning]
+
+  # Git commit message validation
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        name: Conventional commit format
+        stages: [commit-msg]
+        args: [--strict]
+
+# Configuration for pre-commit.ci
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit.com hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: [ty]  # Skip ty in CI until it's more stable
+  submodules: false

@@ -1,0 +1,59 @@
+apply_scene:
+  name: Apply Scene
+  description: Apply colors from an image scene to lights
+  fields:
+    entity_id:
+      name: Entity
+      description: Light entity or entities to apply the scene to
+      required: true
+      selector:
+        entity:
+          domain: light
+    scene_name:
+      name: Scene Name
+      description: Name of the scene (image) to apply
+      required: true
+      selector:
+        text: {}
+    mode:
+      name: Mode
+      description: How to apply the colors
+      required: false
+      default: static
+      selector:
+        select:
+          options:
+            - label: Static (single color)
+              value: static
+            - label: Animated (cycle colors)
+              value: animated
+
+start_animation:
+  name: Start Animation
+  description: Start color animation for lights using a scene
+  fields:
+    entity_id:
+      name: Entity
+      description: Light entity or entities to animate
+      required: true
+      selector:
+        entity:
+          domain: light
+    scene_name:
+      name: Scene Name
+      description: Name of the scene (image) to use for animation
+      required: true
+      selector:
+        text: {}
+
+stop_animation:
+  name: Stop Animation
+  description: Stop color animation for lights
+  fields:
+    entity_id:
+      name: Entity
+      description: Light entity or entities to stop animating
+      required: true
+      selector:
+        entity:
+          domain: light

@@ -1,0 +1,97 @@
+# pyproject.toml - Development tooling configuration
+# Note: HACS components don't need this for distribution (uses manifest.json)
+# This file configures development tools like Ruff, ty, etc.
+
+[project]
+authors = [
+    { name = "MKSG-MugunthKumar" },
+]
+description = "Home Assistant integration that extracts colors from images and applies them to RGB lights"
+keywords = [
+    "color-extraction",
+    "hacs",
+    "home-assistant",
+    "lights",
+    "rgb",
+]
+license = "MIT"
+name = "ha-chameleon"
+readme = "README.md"
+requires-python = ">=3.12"
+version = "0.1.0"
+
+# Development dependencies (install with: uv pip install -e ".[dev]")
+[project.optional-dependencies]
+dev = [
+    "homeassistant-stubs",
+    "pre-commit>=3.0.0",
+    "ruff>=0.8.0",
+    "ty>=0.0.1a1",
+]
+
+[build-system]
+build-backend = "hatchling.build"
+requires = [
+    "hatchling",
+]
+
+# Ruff configuration
+[tool.ruff]
+indent-width = 4
+line-length = 150
+target-version = "py312"
+
+# Exclude paths
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# Enable rules
+select = [
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "I",   # isort
+    "RUF", # Ruff-specific rules
+    "SIM", # flake8-simplify
+    "UP",  # pyupgrade
+    "W",   # pycodestyle warnings
+]
+
+# Ignore rules
+ignore = [
+    "B008",   # do not perform function calls in argument defaults (common in HA)
+    "E501",   # line too long (handled by formatter)
+    "SIM105", # contextlib.suppress - explicit try/except is clearer for async cancel
+    "SIM108", # ternary operator - multi-line if/else can be more readable
+    "TC001",  # move import into TYPE_CHECKING block (not HA style)
+    "TC002",  # move third-party import into TYPE_CHECKING block (not HA style)
+    "TC003",  # move stdlib import into TYPE_CHECKING block (not HA style)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components.chameleon"]
+
+
+[tool.ruff.format]
+indent-style = "space"
+line-ending = "auto"
+quote-style = "double"
+skip-magic-trailing-comma = false
+
+# ty configuration (Astral's type checker)
+# Note: ty is still in alpha - these settings may change
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.rules]
+# Ignore unresolved imports for third-party packages (homeassistant, colorthief, etc.)
+# These aren't installed in ty's isolated environment
+# See: https://github.com/astral-sh/ty/issues/1354 for per-library ignore support
+unresolved-import = "ignore"
