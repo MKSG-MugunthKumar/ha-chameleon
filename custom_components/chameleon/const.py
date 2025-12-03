@@ -1,5 +1,6 @@
 """Constants for the Chameleon integration."""
 
+from datetime import timedelta
 from typing import Final
 
 # Integration domain
@@ -17,7 +18,8 @@ IMAGE_DIRECTORY: Final = "/config/www/chameleon"
 SUPPORTED_EXTENSIONS: Final = (".jpg", ".jpeg", ".png")
 
 # Configuration keys
-CONF_LIGHT_ENTITY: Final = "light_entity"
+CONF_LIGHT_ENTITY: Final = "light_entity"  # Deprecated, kept for migration
+CONF_LIGHT_ENTITIES: Final = "light_entities"  # New: list of light entities
 CONF_ANIMATION_ENABLED: Final = "animation_enabled"
 CONF_ANIMATION_SPEED: Final = "animation_speed"
 
@@ -45,3 +47,6 @@ DEFAULT_QUALITY: Final = 10  # Color extraction quality (1 = highest, 10 = faste
 MIN_ANIMATION_SPEED: Final = 1  # Minimum seconds per transition
 MAX_ANIMATION_SPEED: Final = 60  # Maximum seconds per transition
 DEFAULT_TRANSITION_TIME: Final = 2  # Seconds for light transition effect
+
+# Options caching
+OPTIONS_CACHE_INTERVAL: Final = timedelta(seconds=30)  # Refresh image list every 30s

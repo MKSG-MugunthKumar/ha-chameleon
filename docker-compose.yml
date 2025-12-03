@@ -1,0 +1,18 @@
+# Docker Compose for Chameleon development
+# Usage: docker compose -f docker-compose.dev.yml up -d
+# Access HA at: http://localhost:8123
+
+services:
+  homeassistant:
+    container_name: ha-chameleon-dev
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      # Mount the dev config directory
+      - ./ha-dev-config:/config
+      # Mount the custom component (live reload on restart)
+      - ./custom_components:/config/custom_components
+    ports:
+      - "8123:8123"
+    environment:
+      - TZ=Australia/Melbourne
+    restart: unless-stopped

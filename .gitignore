@@ -68,6 +68,9 @@ home-assistant.log
 home-assistant_v2.db*
 secrets.yaml
 
+# Development HA instance
+ha-dev-config/
+
 # Local development
 *.local
 .env

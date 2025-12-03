@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from homeassistant.core import HomeAssistant
+
 from .const import DEFAULT_COLOR_COUNT, DEFAULT_QUALITY
 
 _LOGGER = logging.getLogger(__name__)
@@ -13,7 +15,24 @@ _LOGGER = logging.getLogger(__name__)
 type RGBColor = tuple[int, int, int]
 
 
+def _sync_extract_dominant_color(image_path: str, quality: int) -> RGBColor | None:
+    """Synchronous color extraction - runs in executor."""
+    from colorthief import ColorThief
+
+    color_thief = ColorThief(image_path)
+    return color_thief.get_color(quality=quality)
+
+
+def _sync_extract_palette(image_path: str, color_count: int, quality: int) -> list[RGBColor]:
+    """Synchronous palette extraction - runs in executor."""
+    from colorthief import ColorThief
+
+    color_thief = ColorThief(image_path)
+    return color_thief.get_palette(color_count=color_count, quality=quality)
+
+
 async def extract_dominant_color(
+    hass: HomeAssistant,
     image_path: Path,
     quality: int = DEFAULT_QUALITY,
 ) -> RGBColor | None:
@@ -21,6 +40,7 @@ async def extract_dominant_color(
     Extract the single dominant color from an image.
 
     Args:
+        hass: Home Assistant instance (needed for executor)
         image_path: Path to the image file
         quality: Color extraction quality (1=highest, 10=fastest)
 
@@ -28,16 +48,21 @@ async def extract_dominant_color(
         RGB tuple (r, g, b) or None if extraction fails
     """
     try:
-        from colorthief import ColorThief
-
-        color_thief = ColorThief(str(image_path))
-        return color_thief.get_color(quality=quality)
+        _LOGGER.debug("Extracting dominant color from %s", image_path)
+        color = await hass.async_add_executor_job(
+            _sync_extract_dominant_color,
+            str(image_path),
+            quality,
+        )
+        _LOGGER.debug("Extracted dominant color: %s", color)
+        return color
     except Exception as e:
         _LOGGER.error("Failed to extract dominant color from %s: %s", image_path, e)
         return None
 
 
 async def extract_color_palette(
+    hass: HomeAssistant,
     image_path: Path,
     color_count: int = DEFAULT_COLOR_COUNT,
     quality: int = DEFAULT_QUALITY,
@@ -46,6 +71,7 @@ async def extract_color_palette(
     Extract a palette of colors from an image.
 
     Args:
+        hass: Home Assistant instance (needed for executor)
         image_path: Path to the image file
         color_count: Number of colors to extract
         quality: Color extraction quality (1=highest, 10=fastest)
@@ -54,10 +80,15 @@ async def extract_color_palette(
         List of RGB tuples, or empty list if extraction fails
     """
     try:
-        from colorthief import ColorThief
-
-        color_thief = ColorThief(str(image_path))
-        return color_thief.get_palette(color_count=color_count, quality=quality)
+        _LOGGER.debug("Extracting %d colors from %s", color_count, image_path)
+        colors = await hass.async_add_executor_job(
+            _sync_extract_palette,
+            str(image_path),
+            color_count,
+            quality,
+        )
+        _LOGGER.debug("Extracted %d colors: %s", len(colors), colors)
+        return colors
     except Exception as e:
         _LOGGER.error("Failed to extract color palette from %s: %s", image_path, e)
         return []

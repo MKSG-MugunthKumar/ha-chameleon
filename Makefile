@@ -63,6 +63,22 @@ pre-commit: ## Run all pre-commit hooks
 	@pre-commit run --all-files
 
 #──────────────────────────────────────────────────────────────────────────────
+# Testing
+#──────────────────────────────────────────────────────────────────────────────
+
+test: ## Run all tests with coverage
+	@echo "$(BLUE)Running tests...$(NC)"
+	@pytest tests/ -v --cov=custom_components.chameleon --cov-report=term-missing
+
+test-quick: ## Run tests without coverage (faster)
+	@echo "$(BLUE)Running tests (quick mode)...$(NC)"
+	@pytest tests/ -v
+
+test-watch: ## Run tests in watch mode (requires pytest-watch)
+	@echo "$(BLUE)Running tests in watch mode...$(NC)"
+	@ptw tests/ -- -v
+
+#──────────────────────────────────────────────────────────────────────────────
 # YAML Linting
 #──────────────────────────────────────────────────────────────────────────────
 
@@ -89,14 +105,33 @@ clean-all: clean ## Clean everything including venv
 	@echo "$(GREEN)✓$(NC) Cleaned all (including venv)"
 
 #──────────────────────────────────────────────────────────────────────────────
-# Development (Docker targets will be added later)
+# Development Server
 #──────────────────────────────────────────────────────────────────────────────
 
-# Placeholder for future Docker targets
-# docker-build: ## Build Home Assistant dev container
-# docker-run: ## Run Home Assistant dev container
-# docker-logs: ## View container logs
-# docker-stop: ## Stop container
+dev-setup: ## Setup development environment and start dev server
+	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(BLUE)  Setting up Chameleon development environment$(NC)"
+	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@$(MAKE) --no-print-directory setup
+	@./scripts/dev-server.sh start
+
+dev-start: ## Start the Home Assistant dev server
+	@./scripts/dev-server.sh start
+
+dev-stop: ## Stop the Home Assistant dev server
+	@./scripts/dev-server.sh stop
+
+dev-restart: ## Restart the dev server (reload code changes)
+	@./scripts/dev-server.sh restart
+
+dev-logs: ## Show dev server logs (follow mode)
+	@./scripts/dev-server.sh logs
+
+dev-shell: ## Open a shell in the dev container
+	@./scripts/dev-server.sh shell
+
+dev-status: ## Show dev server status
+	@./scripts/dev-server.sh status
 
 #──────────────────────────────────────────────────────────────────────────────
 # Deployment

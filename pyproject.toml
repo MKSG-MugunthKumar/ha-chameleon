@@ -17,8 +17,15 @@ keywords = [
 license = "MIT"
 name = "ha-chameleon"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 version = "0.1.0"
+
+# Runtime dependencies (same as manifest.json requirements)
+# These are installed by HA automatically, but listed here for IDE support
+dependencies = [
+    "Pillow>=10.0.0",
+    "colorthief==0.2.1",
+]
 
 # Development dependencies (install with: uv pip install -e ".[dev]")
 [project.optional-dependencies]
@@ -29,17 +36,28 @@ dev = [
     "ty>=0.0.1a1",
 ]
 
+# Test dependencies (install with: uv pip install -e ".[test]")
+test = [
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-homeassistant-custom-component>=0.13.0",
+    "pytest>=8.0.0",
+]
+
 [build-system]
 build-backend = "hatchling.build"
 requires = [
     "hatchling",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["custom_components/chameleon"]
+
 # Ruff configuration
 [tool.ruff]
 indent-width = 4
 line-length = 150
-target-version = "py312"
+target-version = "py313"
 
 # Exclude paths
 exclude = [
@@ -76,7 +94,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["custom_components.chameleon"]
+known-first-party = [
+    "custom_components.chameleon",
+]
 
 
 [tool.ruff.format]
@@ -88,10 +108,42 @@ skip-magic-trailing-comma = false
 # ty configuration (Astral's type checker)
 # Note: ty is still in alpha - these settings may change
 [tool.ty.environment]
-python-version = "3.12"
+python-version = "3.14"
 
 [tool.ty.rules]
 # Ignore unresolved imports for third-party packages (homeassistant, colorthief, etc.)
 # These aren't installed in ty's isolated environment
 # See: https://github.com/astral-sh/ty/issues/1354 for per-library ignore support
 unresolved-import = "ignore"
+
+# Exclude test files from type checking - test code uses mocks and dynamic typing
+[tool.ty.src]
+exclude = ["tests/"]
+
+# pytest configuration
+[tool.pytest.ini_options]
+addopts = "-v --cov=custom_components.chameleon --cov-report=term-missing"
+asyncio_mode = "auto"
+pythonpath = [
+    ".",
+]
+testpaths = [
+    "tests",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+omit = [
+    "*/__pycache__/*",
+    "*/tests/*",
+]
+source = [
+    "custom_components/chameleon",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if TYPE_CHECKING:",
+    "pragma: no cover",
+    "raise NotImplementedError",
+]
