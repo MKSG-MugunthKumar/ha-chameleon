@@ -389,7 +389,10 @@ class ChameleonSceneSelect(SelectEntity):
             )
 
     async def _apply_colors_animated(self, image_path: Path, brightness: int = 100) -> ApplyColorsResult:
-        """Extract colors from image and start animation for lights."""
+        """Extract colors from image and start synchronized animation for lights.
+
+        All lights change color together, cycling through the gradient in sync.
+        """
         animation_manager = self._get_animation_manager()
         if not animation_manager:
             _LOGGER.error("AnimationManager not available")
@@ -414,16 +417,24 @@ class ChameleonSceneSelect(SelectEntity):
             len(colors),
         )
 
-        # Start animation for each light
-        # Note: We create a "fake" ApplyColorsResult since animation doesn't
-        # immediately apply colors - it starts a loop
+        # Check availability of all lights first
         from .light_controller import LightResult
 
         results = []
+        available_lights = []
+
         for light_entity in self._light_entities:
-            # Check light availability first
             is_available, error, error_msg = self._light_controller.check_light_availability(light_entity)
-            if not is_available:
+            if is_available:
+                available_lights.append(light_entity)
+                results.append(
+                    LightResult(
+                        entity_id=light_entity,
+                        success=True,
+                        color=gradient[0] if gradient else None,
+                    )
+                )
+            else:
                 results.append(
                     LightResult(
                         entity_id=light_entity,
@@ -432,24 +443,18 @@ class ChameleonSceneSelect(SelectEntity):
                         error_message=error_msg,
                     )
                 )
-                continue
 
-            # Start animation with brightness
-            await animation_manager.start_animation(
-                light_entity,
+        # Start synchronized animation for all available lights
+        if available_lights:
+            await animation_manager.start_synchronized_animation(
+                available_lights,
                 gradient,
                 speed=self._animation_speed,
                 brightness=brightness,
             )
-
-            # Mark as successful (animation started)
-            # Use first color of gradient as the "applied" color for tracking
-            results.append(
-                LightResult(
-                    entity_id=light_entity,
-                    success=True,
-                    color=gradient[0] if gradient else None,
-                )
+            _LOGGER.info(
+                "Started synchronized animation for %d lights",
+                len(available_lights),
             )
 
         self._is_animating = True
