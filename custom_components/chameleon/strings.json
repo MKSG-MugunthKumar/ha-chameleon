@@ -28,6 +28,16 @@
       "scene": {
         "name": "Scene"
       }
+    },
+    "number": {
+      "brightness": {
+        "name": "Brightness"
+      }
+    },
+    "switch": {
+      "animation": {
+        "name": "Animation"
+      }
     }
   }
 }

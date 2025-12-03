@@ -24,6 +24,7 @@ from .const import (
     CONF_ANIMATION_SPEED,
     CONF_LIGHT_ENTITIES,
     CONF_LIGHT_ENTITY,
+    DEFAULT_BRIGHTNESS,
     DEFAULT_COLOR_COUNT,
     DOMAIN,
     IMAGE_DIRECTORY,
@@ -139,6 +140,16 @@ class ChameleonSceneSelect(SelectEntity):
     def _get_animation_manager(self) -> AnimationManager | None:
         """Get the AnimationManager from hass.data."""
         return self.hass.data.get(DOMAIN, {}).get("animation_manager")
+
+    def _get_runtime_animation_enabled(self) -> bool:
+        """Get animation enabled state from runtime data (switch) or fall back to config."""
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
+        return entry_data.get("animation_enabled", self._animation_enabled)
+
+    def _get_runtime_brightness(self) -> int:
+        """Get brightness from runtime data (number slider) or fall back to default."""
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
+        return entry_data.get("brightness", DEFAULT_BRIGHTNESS)
 
     async def async_added_to_hass(self) -> None:
         """Run when entity is added to hass."""
@@ -267,12 +278,17 @@ class ChameleonSceneSelect(SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Handle the user selecting an option."""
+        # Get runtime values from switch/number entities (or fall back to config)
+        animation_enabled = self._get_runtime_animation_enabled()
+        brightness = self._get_runtime_brightness()
+
         _LOGGER.info(
-            "Scene selected: '%s' for %d light(s): %s (animation=%s)",
+            "Scene selected: '%s' for %d light(s): %s (animation=%s, brightness=%d%%)",
             option,
             len(self._light_entities),
             self._light_entities,
-            self._animation_enabled,
+            animation_enabled,
+            brightness,
         )
 
         # Clear previous error state
@@ -294,17 +310,17 @@ class ChameleonSceneSelect(SelectEntity):
         _LOGGER.debug("Found image for scene '%s': %s", option, image_path)
 
         # Extract colors and apply to lights (static or animated)
-        if self._animation_enabled:
-            result = await self._apply_colors_animated(image_path)
+        if animation_enabled:
+            result = await self._apply_colors_animated(image_path, brightness)
         else:
-            result = await self._apply_colors_static(image_path)
+            result = await self._apply_colors_static(image_path, brightness)
 
         # Update state based on result
         if result.all_succeeded:
             # All lights updated successfully
             self._current_option = option
             self._applied_colors = result.applied_colors
-            mode = "animation started" if self._animation_enabled else "applied"
+            mode = "animation started" if animation_enabled else "applied"
             _LOGGER.info("Scene '%s' %s successfully to all lights", option, mode)
         elif result.all_failed:
             # All lights failed - don't update current_option
@@ -330,7 +346,7 @@ class ChameleonSceneSelect(SelectEntity):
 
         self.async_write_ha_state()
 
-    async def _apply_colors_static(self, image_path: Path) -> ApplyColorsResult:
+    async def _apply_colors_static(self, image_path: Path, brightness: int = 100) -> ApplyColorsResult:
         """Extract colors from image and apply statically to lights."""
         num_lights = len(self._light_entities)
 
@@ -339,7 +355,10 @@ class ChameleonSceneSelect(SelectEntity):
             _LOGGER.debug("Extracting dominant color for single light")
             color = await extract_dominant_color(self.hass, image_path)
             if color:
-                return await self._light_controller.apply_colors_to_lights({self._light_entities[0]: color})
+                return await self._light_controller.apply_colors_to_lights(
+                    {self._light_entities[0]: color},
+                    brightness=brightness,
+                )
             else:
                 _LOGGER.error("Failed to extract dominant color from %s", image_path)
                 return ApplyColorsResult()
@@ -364,9 +383,12 @@ class ChameleonSceneSelect(SelectEntity):
                 color = colors[i % len(colors)]  # Cycle if fewer colors than lights
                 light_colors[light_entity] = color
 
-            return await self._light_controller.apply_colors_to_lights(light_colors)
+            return await self._light_controller.apply_colors_to_lights(
+                light_colors,
+                brightness=brightness,
+            )
 
-    async def _apply_colors_animated(self, image_path: Path) -> ApplyColorsResult:
+    async def _apply_colors_animated(self, image_path: Path, brightness: int = 100) -> ApplyColorsResult:
         """Extract colors from image and start animation for lights."""
         animation_manager = self._get_animation_manager()
         if not animation_manager:
@@ -412,11 +434,12 @@ class ChameleonSceneSelect(SelectEntity):
                 )
                 continue
 
-            # Start animation
+            # Start animation with brightness
             await animation_manager.start_animation(
                 light_entity,
                 gradient,
                 speed=self._animation_speed,
+                brightness=brightness,
             )
 
             # Mark as successful (animation started)

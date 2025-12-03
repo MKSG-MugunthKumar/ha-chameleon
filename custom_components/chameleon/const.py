@@ -24,7 +24,7 @@ CONF_ANIMATION_ENABLED: Final = "animation_enabled"
 CONF_ANIMATION_SPEED: Final = "animation_speed"
 
 # Platforms
-PLATFORMS: Final = ["select"]
+PLATFORMS: Final = ["select", "number", "switch"]
 
 # Services
 SERVICE_APPLY_SCENE: Final = "apply_scene"
@@ -47,6 +47,11 @@ DEFAULT_QUALITY: Final = 10  # Color extraction quality (1 = highest, 10 = faste
 MIN_ANIMATION_SPEED: Final = 1  # Minimum seconds per transition
 MAX_ANIMATION_SPEED: Final = 60  # Maximum seconds per transition
 DEFAULT_TRANSITION_TIME: Final = 2  # Seconds for light transition effect
+
+# Brightness
+DEFAULT_BRIGHTNESS: Final = 100  # Default brightness percentage
+MIN_BRIGHTNESS: Final = 1
+MAX_BRIGHTNESS: Final = 100
 
 # Options caching
 OPTIONS_CACHE_INTERVAL: Final = timedelta(seconds=30)  # Refresh image list every 30s

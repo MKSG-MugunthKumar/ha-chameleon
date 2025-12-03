@@ -15,6 +15,7 @@ from enum import Enum
 from typing import ClassVar
 
 from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
     ATTR_RGB_COLOR,
     ATTR_SUPPORTED_COLOR_MODES,
     ATTR_TRANSITION,
@@ -165,6 +166,7 @@ class LightController:
         entity_id: str,
         color: RGBColor,
         transition: int | None = None,
+        brightness: int | None = None,
         skip_availability_check: bool = False,
     ) -> LightResult:
         """Apply an RGB color to a specific light entity.
@@ -173,6 +175,7 @@ class LightController:
             entity_id: The light entity ID
             color: RGB color tuple (r, g, b)
             transition: Transition time in seconds (uses default if None)
+            brightness: Brightness percentage (1-100), converted to 0-255 for HA
             skip_availability_check: Skip availability check (useful for batch operations)
 
         Returns:
@@ -192,24 +195,41 @@ class LightController:
 
         transition_time = transition if transition is not None else self.transition_time
 
-        _LOGGER.info(
-            "Applying color RGB(%d, %d, %d) to %s (transition=%ds)",
-            color[0],
-            color[1],
-            color[2],
-            entity_id,
-            transition_time,
-        )
+        # Build service call data
+        service_data = {
+            ATTR_ENTITY_ID: entity_id,
+            ATTR_RGB_COLOR: list(color),
+            ATTR_TRANSITION: transition_time,
+        }
+
+        # Add brightness if specified (convert from 1-100% to 0-255)
+        if brightness is not None:
+            ha_brightness = int((brightness / 100) * 255)
+            service_data[ATTR_BRIGHTNESS] = ha_brightness
+            _LOGGER.info(
+                "Applying color RGB(%d, %d, %d) to %s (transition=%ds, brightness=%d%%)",
+                color[0],
+                color[1],
+                color[2],
+                entity_id,
+                transition_time,
+                brightness,
+            )
+        else:
+            _LOGGER.info(
+                "Applying color RGB(%d, %d, %d) to %s (transition=%ds)",
+                color[0],
+                color[1],
+                color[2],
+                entity_id,
+                transition_time,
+            )
 
         try:
             await self.hass.services.async_call(
                 LIGHT_DOMAIN,
                 SERVICE_TURN_ON,
-                {
-                    ATTR_ENTITY_ID: entity_id,
-                    ATTR_RGB_COLOR: list(color),
-                    ATTR_TRANSITION: transition_time,
-                },
+                service_data,
                 blocking=True,
             )
             _LOGGER.debug("Successfully applied color to %s", entity_id)
@@ -233,12 +253,14 @@ class LightController:
         self,
         light_colors: dict[str, RGBColor],
         transition: int | None = None,
+        brightness: int | None = None,
     ) -> ApplyColorsResult:
         """Apply colors to multiple lights.
 
         Args:
             light_colors: Dict mapping entity_id to RGB color
             transition: Transition time in seconds (uses default if None)
+            brightness: Brightness percentage (1-100), converted to 0-255 for HA
 
         Returns:
             ApplyColorsResult with all results
@@ -268,6 +290,7 @@ class LightController:
                 entity_id,
                 color,
                 transition=transition,
+                brightness=brightness,
                 skip_availability_check=True,  # Already checked
             )
             result.results.append(light_result)

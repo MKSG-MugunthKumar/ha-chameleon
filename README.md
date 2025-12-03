@@ -61,6 +61,62 @@ Use the select entity in:
 - Scripts
 - Voice assistants
 
+### Example Dashboard Card
+
+Add this to your Lovelace dashboard to create a control panel for Chameleon:
+
+```yaml
+type: vertical-stack
+cards:
+  # Scene selector with entity picture
+  - type: entities
+    title: Chameleon
+    entities:
+      - entity: select.bedroom_lamp_scene
+        name: Scene
+      - entity: number.bedroom_lamp_brightness
+        name: Brightness
+      - entity: switch.bedroom_lamp_animation
+        name: Animation Mode
+    show_header_toggle: false
+
+  # Alternative: Compact horizontal controls
+  - type: horizontal-stack
+    cards:
+      - type: entity
+        entity: select.bedroom_lamp_scene
+        name: Scene
+      - type: entity
+        entity: switch.bedroom_lamp_animation
+        icon: mdi:animation-play
+```
+
+**Complete Control Card** (recommended):
+
+```yaml
+type: vertical-stack
+cards:
+  - type: custom:mushroom-title-card
+    title: "🎨 Chameleon"
+    subtitle: Ambient lighting from images
+  - type: entities
+    entities:
+      - entity: select.bedroom_lamp_scene
+        name: Scene
+        icon: mdi:palette
+      - entity: number.bedroom_lamp_brightness
+        name: Brightness
+      - entity: switch.bedroom_lamp_animation
+        name: Animation
+    state_color: true
+```
+
+> **Note**: Replace `bedroom_lamp` with your light's base name. Entity IDs follow the pattern:
+>
+> - `select.{light_name}_scene`
+> - `number.{light_name}_brightness`
+> - `switch.{light_name}_animation`
+
 ### State Attributes
 
 The select entity exposes useful attributes:
@@ -161,6 +217,142 @@ Check the `failed_lights` attribute:
 
 MIT License - see [LICENSE](LICENSE) for details.
 
+## Acknowledgments
+
+Inspired by:
+
+- [adaptive-lighting](https://github.com/basnijholt/adaptive-lighting) - For multi-instance config flow patterns
+- [scenery](https://github.com/home-assistant/core) - For select entity patterns
+
+Libraries used:
+
+- [ColorThief](https://github.com/fengsp/color-thief-py) - Color extraction library
+
+Are you a developer? Continue reading for architecture details, error handling strategies, and development workflow.
+
+## Chameleon Integration - Developer Guide
+
+**Extract colors from images and apply them to your RGB lights.**
+
+Chameleon is a custom component for [Home Assistant](https://www.home-assistant.io/) that automatically extracts colors from images and applies them to your lights. Perfect for creating ambient lighting that matches your favorite photos, artwork, or movie posters.
+
+## Architecture Overview
+
+### Module Responsibilities
+
+| Module                | Responsibility                                               |
+| --------------------- | ------------------------------------------------------------ |
+| `__init__.py`         | Integration entry point, setup/unload                        |
+| `config_flow.py`      | UI configuration flow                                        |
+| `const.py`            | All constants and configuration keys                         |
+| `select.py`           | Select entity (scene selection UI)                           |
+| `light_controller.py` | Shared light control logic (availability, color application) |
+| `color_extractor.py`  | Color extraction from images                                 |
+| `animations.py`       | Animation loop management                                    |
+
+### Key Design Pattern: Separation of Concerns
+
+The `light_controller.py` module contains all light control logic shared between:
+
+- Select entity (`select.py`)
+- Services (future: `apply_scene`, `start_animation`, `stop_animation`)
+
+This separation ensures consistent behavior and error handling across all light control operations.
+
+## Error Handling Strategy
+
+### Light Availability Checks
+
+Before applying colors, the integration checks:
+
+1. **Entity exists**: Light entity is registered in HA
+2. **Entity available**: Not in `unavailable` or `unknown` state
+3. **RGB support**: Light supports RGB, RGBW, RGBWW, HS, or XY color modes
+
+### Error Tracking
+
+Errors are tracked in entity state attributes:
+
+- `last_error`: Human-readable error message (cleared on success)
+- `failed_lights`: Dict of entity_id → error message
+
+This allows:
+
+- UI display of errors
+- Automation triggers based on failures
+- Debugging without checking logs
+
+### Failure Modes
+
+| Scenario           | Behavior                                     |
+| ------------------ | -------------------------------------------- |
+| All lights succeed | Update `current_option`, clear errors        |
+| All lights fail    | Keep previous `current_option`, set error    |
+| Partial failure    | Update `current_option`, track failed lights |
+
+### Production Testing
+
+- Test with real Philips Hue or RGB lights
+- Verify color accuracy
+- Test animation smoothness
+- Monitor DB writes (check recorder size growth)
+
+## Common Issues
+
+### Image Directory Not Found
+
+- Ensure `/config/www/chameleon/` exists
+- Integration should create it on first setup if missing
+
+### Colors Look Wrong
+
+- Check image format (RGB vs RGBA)
+- Verify color space conversions
+- Test with known-good images first
+
+### Select Entity Not Showing Options
+
+- Check image directory scan logic
+- Verify file extensions (jpg, png)
+- Check logs for errors (set `logger.logs.custom_components.chameleon: debug`)
+
+### Light Not Responding
+
+Check the `failed_lights` attribute for detailed error messages:
+
+- `not_found`: Entity doesn't exist
+- `unavailable`: Device offline
+- `no_rgb_support`: Light doesn't support colors
+- `service_call_failed`: HA service error
+
+## Development Workflow
+
+### Quick Start
+
+```bash
+make dev-setup    # First time: install tools + start server
+make dev-start    # Start server (if already set up)
+make dev-restart  # Reload code changes
+make dev-logs     # View logs
+```
+
+### Deploy to Production (Your own HA instance)
+
+```bash
+# Sync to production server
+rsync -avz --delete \
+  ~/ha-chameleon/custom_components/chameleon/ \
+  your-server:/config/custom_components/chameleon/
+
+# Restart production HA
+ssh your-server "docker restart homeassistant"
+
+# Monitor logs
+ssh your-server "docker logs -f homeassistant"
+```
+
+---
+
 ## Translations
 
 Chameleon currently supports **English only**. We'd love help translating to other languages!
@@ -177,14 +369,3 @@ Quick start:
 2. Create a feature branch
 3. Run `make check` before submitting
 4. Submit a pull request
-
-## Acknowledgments
-
-Inspired by:
-
-- [adaptive-lighting](https://github.com/basnijholt/adaptive-lighting) - For multi-instance config flow patterns
-- [scenery](https://github.com/home-assistant/core) - For select entity patterns
-
-Libraries used:
-
-- [ColorThief](https://github.com/fengsp/color-thief-py) - Color extraction library

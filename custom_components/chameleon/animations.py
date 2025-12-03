@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.components.light import ATTR_RGB_COLOR, ATTR_TRANSITION
+from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATTR_TRANSITION
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_ON
 
 from .const import DEFAULT_TRANSITION_TIME
@@ -29,6 +29,7 @@ class AnimationController:
         colors: list[RGBColor],
         speed: int,
         transition: int = DEFAULT_TRANSITION_TIME,
+        brightness: int | None = None,
     ) -> None:
         """
         Initialize the animation controller.
@@ -39,12 +40,14 @@ class AnimationController:
             colors: List of RGB colors to cycle through
             speed: Seconds between color changes
             transition: Transition time for light changes
+            brightness: Brightness percentage (1-100), converted to 0-255 for HA
         """
         self.hass = hass
         self.light_entity = light_entity
         self.colors = colors
         self.speed = speed
         self.transition = transition
+        self.brightness = brightness
 
         self._running = False
         self._task: asyncio.Task | None = None
@@ -93,15 +96,22 @@ class AnimationController:
             try:
                 color = self.colors[self._current_index]
 
+                # Build service call data
+                service_data = {
+                    ATTR_ENTITY_ID: self.light_entity,
+                    ATTR_RGB_COLOR: list(color),
+                    ATTR_TRANSITION: self.transition,
+                }
+
+                # Add brightness if specified
+                if self.brightness is not None:
+                    service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
+
                 # Apply color to light with transition
                 await self.hass.services.async_call(
                     "light",
                     SERVICE_TURN_ON,
-                    {
-                        ATTR_ENTITY_ID: self.light_entity,
-                        ATTR_RGB_COLOR: list(color),
-                        ATTR_TRANSITION: self.transition,
-                    },
+                    service_data,
                     blocking=False,
                 )
 
@@ -145,6 +155,7 @@ class AnimationManager:
         colors: list[RGBColor],
         speed: int,
         transition: int = DEFAULT_TRANSITION_TIME,
+        brightness: int | None = None,
     ) -> None:
         """Start or update animation for a light entity."""
         # Stop existing animation if running
@@ -158,6 +169,7 @@ class AnimationManager:
             colors,
             speed,
             transition,
+            brightness,
         )
         self._controllers[light_entity] = controller
         await controller.start()
