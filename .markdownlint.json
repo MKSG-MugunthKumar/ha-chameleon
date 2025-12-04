@@ -4,7 +4,7 @@
   "MD007": { "indent": 2 },
   "MD013": false,
   "MD024": { "siblings_only": true },
-  "MD033": { "allowed_elements": ["br", "img", "details", "summary"] },
+  "MD033": { "allowed_elements": ["br", "img", "details", "summary", "p"] },
   "MD036": false,
   "MD040": false,
   "MD041": false,

@@ -1,4 +1,6 @@
-![Chameleon](icon.png)
+<p align="center">
+  <img src="icon.png" alt="Chameleon" width="128" height="128">
+</p>
 
 # Chameleon
 
@@ -477,3 +479,7 @@ Quick start:
 - [ ] **Custom region mapping** - User-defined light-to-region assignments
 
 ---
+
+## Author
+
+Created by [@mk_sg](https://mastodon.social/@mk_sg) - Follow for updates and other projects!
