@@ -70,6 +70,7 @@ secrets.yaml
 
 # Development HA instance
 ha-dev-config/
+homelab-ha-config/
 
 # Local development
 *.local
