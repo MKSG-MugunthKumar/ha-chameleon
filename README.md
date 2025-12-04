@@ -1,3 +1,5 @@
+![Chameleon](icon.png)
+
 # Chameleon
 
 **Extract colors from images and apply them to your RGB lights.**
@@ -9,8 +11,16 @@ Chameleon is a custom component for [Home Assistant](https://www.home-assistant.
 - **Image-based scenes**: Drop images in a folder, Chameleon auto-discovers them as scenes
 - **Multi-light support**: Distribute extracted colors across multiple lights
 - **Color palette extraction**: Uses advanced color extraction for vibrant, representative colors
-- **Animation mode**: Cycle through colors from an image (coming soon)
+- **Animation mode**: Cycle through colors from an image
 - **Native HA integration**: Works with the built-in select entity UI
+
+## Screenshots
+
+![Integration Setup](docs/images/integration-setup.png)
+_Configure your RGB lights in the setup flow_
+
+![Dashboard Card](docs/images/dashboard-card.png)
+_Control scenes, brightness, and animation from your dashboard_
 
 ## Installation
 
@@ -51,6 +61,22 @@ Drop image files into `/config/www/chameleon/`:
 ```
 
 Filenames are automatically converted to scene names (underscores/hyphens become spaces, title case applied).
+
+### Example Images
+
+We've included some example images to get you started. Copy them from [`examples/images/`](examples/images/) to your `/config/www/chameleon/` folder:
+
+| Image                    | Palette                     | Best For                   |
+| ------------------------ | --------------------------- | -------------------------- |
+| `beach sunset.jpg`       | Warm oranges, pinks, golds  | Relaxing evening ambiance  |
+| `dusk.jpg`               | Soft purples, blues, pinks  | Calm twilight mood         |
+| `blue waters.jpg`        | Cool blues, teals           | Serene, focused atmosphere |
+| `greenery.jpg`           | Natural greens, earth tones | Fresh, organic feel        |
+| `greenish blue lake.jpg` | Teal, aqua, green           | Tranquil nature vibe       |
+| `abstract green.jpg`     | Vibrant greens              | Modern, artistic energy    |
+| `artistic purple.jpg`    | Deep purples, violets       | Creative, moody ambiance   |
+
+All example images are from [Unsplash](https://unsplash.com) and free to use.
 
 ### Selecting Scenes
 
@@ -413,11 +439,6 @@ Quick start:
 2. Create a feature branch
 3. Run `make check` before submitting
 4. Submit a pull request
-
-## TODO - Chameleon Integration Roadmap
-
-- [ ] Screenshots and demos for README
-- [ ] Example images included in repo
 
 ---
 
