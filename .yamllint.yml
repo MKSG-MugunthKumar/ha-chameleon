@@ -1,6 +1,13 @@
 # yamllint configuration for Chameleon Home Assistant Integration
 # Permissive settings that work well with HA YAML files
 
+# Ignore empty-values in GitHub Actions workflows (push:, pull_request: are valid)
+ignore-from-file: [.gitignore]
+
+yaml-files:
+  - "*.yaml"
+  - "*.yml"
+
 rules:
   braces:
     max-spaces-inside: 1
@@ -22,7 +29,9 @@ rules:
     max: 2
     max-start: 0
     max-end: 1
-  empty-values: enable
+  empty-values:
+    forbid-in-block-mappings: false
+    forbid-in-flow-mappings: true
   hyphens:
     max-spaces-after: 1
   indentation:

@@ -2,7 +2,7 @@
 # Run 'make help' to see available commands
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint format check type clean install-hooks
+.PHONY: help setup lint format check type clean install-hooks deploy
 
 # Colors
 BLUE := \033[0;34m
@@ -137,14 +137,26 @@ dev-status: ## Show dev server status
 # Deployment
 #──────────────────────────────────────────────────────────────────────────────
 
-# Example rsync deployment (customize REMOTE_HOST)
-# REMOTE_HOST := homelab
-# REMOTE_PATH := /config/custom_components/chameleon
+# Load .env file if it exists
+-include .env
+export
 
-# deploy: ## Deploy to production HA server via rsync
-# 	@echo "$(BLUE)Deploying to $(REMOTE_HOST)...$(NC)"
-# 	@rsync -avz --delete $(SRC)/ $(REMOTE_HOST):$(REMOTE_PATH)/
-# 	@echo "$(GREEN)✓$(NC) Deployed. Restart Home Assistant to apply changes."
+# Set these in .env or environment:
+#   REMOTE_HOST=your-ha-server
+#   REMOTE_PATH=/config  (base HA config path, /custom_components/chameleon is auto-appended)
+
+DEPLOY_PATH := $(REMOTE_PATH)/custom_components/chameleon
+
+deploy: ## Deploy to production HA server via rsync
+ifndef REMOTE_HOST
+	$(error REMOTE_HOST is not set. Add it to .env or export it.)
+endif
+ifndef REMOTE_PATH
+	$(error REMOTE_PATH is not set. Add it to .env or export it.)
+endif
+	@echo "$(BLUE)Deploying to $(REMOTE_HOST):$(DEPLOY_PATH)...$(NC)"
+	@rsync -avz --delete --exclude="__pycache__" $(SRC)/ $(REMOTE_HOST):$(DEPLOY_PATH)/
+	@echo "$(GREEN)✓$(NC) Deployed. Restart Home Assistant to apply changes."
 
 #──────────────────────────────────────────────────────────────────────────────
 # Help
