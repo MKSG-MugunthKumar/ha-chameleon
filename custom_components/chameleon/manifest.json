@@ -1,12 +1,17 @@
 {
   "domain": "chameleon",
   "name": "Chameleon",
-  "codeowners": ["@MKSG-MugunthKumar"],
+  "codeowners": [
+    "@MKSG-MugunthKumar"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/MKSG-MugunthKumar/ha-chameleon",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/MKSG-MugunthKumar/ha-chameleon/issues",
-  "requirements": ["colorthief==0.2.1", "Pillow>=10.0.0"],
-  "version": "0.1.0"
+  "requirements": [
+    "colorthief==0.2.1",
+    "Pillow>=10.0.0"
+  ],
+  "version": "1.0.0"
 }

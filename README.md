@@ -1,3 +1,8 @@
+[![HACS Validation](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/hacs.yaml/badge.svg)](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/hacs.yaml)
+[![Validate with hassfest](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/hassfest.yaml)
+[![Lint](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/lint.yaml/badge.svg)](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/lint.yaml)
+[![Release](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/release.yaml/badge.svg)](https://github.com/MKSG-MugunthKumar/ha-chameleon/actions/workflows/release.yaml)
+
 <p align="center">
   <img src="icon.png" alt="Chameleon" width="128" height="128">
 </p>
