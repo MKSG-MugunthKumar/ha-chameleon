@@ -1,7 +1,5 @@
 {
   "name": "Chameleon",
-  "country": "NO",
   "render_readme": true,
-  "homeassistant": "2024.1.0",
-  "persistent_directory": "userfiles"
+  "homeassistant": "2024.1.0"
 }
