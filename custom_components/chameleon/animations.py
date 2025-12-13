@@ -140,7 +140,8 @@ class AnimationController:
 class SynchronizedAnimationController:
     """Controls synchronized color animation for multiple lights.
 
-    All lights change color at the same time, cycling through the gradient together.
+    Each light displays a different color from the gradient (distributed evenly),
+    and all lights cycle through colors together in sync.
     """
 
     def __init__(
@@ -173,6 +174,12 @@ class SynchronizedAnimationController:
         self._running = False
         self._task: asyncio.Task | None = None
         self._current_index = 0
+
+        # Calculate offset for each light to distribute colors evenly across the gradient
+        num_lights = len(light_entities)
+        num_colors = len(colors)
+        # Spread lights evenly across the color gradient
+        self._light_offsets = [(i * num_colors) // num_lights for i in range(num_lights)]
 
     @property
     def is_running(self) -> bool:
@@ -212,32 +219,38 @@ class SynchronizedAnimationController:
         _LOGGER.info("Stopped synchronized animation for %d lights", len(self.light_entities))
 
     async def _animation_loop(self) -> None:
-        """Main animation loop - all lights change color together."""
+        """Main animation loop - each light shows a different color, all cycle in sync."""
+        num_colors = len(self.colors)
+
         while self._running:
             try:
-                color = self.colors[self._current_index]
+                # Apply a different color to each light based on its offset
+                for i, light_entity in enumerate(self.light_entities):
+                    # Each light gets a color at (current_index + its_offset) % num_colors
+                    color_index = (self._current_index + self._light_offsets[i]) % num_colors
+                    color = self.colors[color_index]
 
-                # Build service call data for all lights at once
-                service_data = {
-                    ATTR_ENTITY_ID: self.light_entities,  # List of all lights
-                    ATTR_RGB_COLOR: list(color),
-                    ATTR_TRANSITION: self.transition,
-                }
+                    # Build service call data for this light
+                    service_data = {
+                        ATTR_ENTITY_ID: light_entity,
+                        ATTR_RGB_COLOR: list(color),
+                        ATTR_TRANSITION: self.transition,
+                    }
 
-                # Add brightness if specified
-                if self.brightness is not None:
-                    service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
+                    # Add brightness if specified
+                    if self.brightness is not None:
+                        service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
 
-                # Apply color to ALL lights simultaneously
-                await self.hass.services.async_call(
-                    "light",
-                    SERVICE_TURN_ON,
-                    service_data,
-                    blocking=False,
-                )
+                    # Apply color to this light
+                    await self.hass.services.async_call(
+                        "light",
+                        SERVICE_TURN_ON,
+                        service_data,
+                        blocking=False,
+                    )
 
-                # Move to next color
-                self._current_index = (self._current_index + 1) % len(self.colors)
+                # Move to next color (all lights advance together)
+                self._current_index = (self._current_index + 1) % num_colors
 
                 # Wait before next color change
                 await asyncio.sleep(self.speed)

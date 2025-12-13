@@ -4,11 +4,12 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup lint format check type clean install-hooks deploy
 
-# Colors
-BLUE := \033[0;34m
-GREEN := \033[0;32m
-YELLOW := \033[1;33m
-NC := \033[0m
+# Colors - defined as shell commands that output the escape sequence
+# This ensures colors work across different shells and Make versions
+BLUE := $(shell printf '\033[0;34m')
+GREEN := $(shell printf '\033[0;32m')
+YELLOW := $(shell printf '\033[1;33m')
+NC := $(shell printf '\033[0m')
 
 # Paths
 SRC := custom_components/chameleon
@@ -168,5 +169,5 @@ help: ## Show this help message
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@echo ""
