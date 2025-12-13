@@ -85,11 +85,6 @@ def _scene_name_from_filename(filename: str) -> str:
     return filename.replace("_", " ").replace("-", " ").title()
 
 
-def _filename_from_scene_name(scene_name: str) -> str:
-    """Convert scene name back to filename (without extension)."""
-    return scene_name.lower().replace(" ", "_")
-
-
 class ChameleonSceneSelect(SelectEntity):
     """Select entity for choosing Chameleon scenes."""
 
@@ -118,8 +113,9 @@ class ChameleonSceneSelect(SelectEntity):
         self._last_error: str | None = None
         self._failed_lights: dict[str, str] = {}  # entity_id -> error message
 
-        # Options caching
+        # Options caching - stores scene name -> file path mapping
         self._cached_options: list[str] = []
+        self._scene_to_path: dict[str, Path] = {}  # Maps scene names to actual file paths
         self._options_cache_unsub: asyncio.TimerHandle | None = None
 
         # Light controller for shared logic
@@ -198,11 +194,12 @@ class ChameleonSceneSelect(SelectEntity):
 
     async def _async_refresh_options(self) -> None:
         """Refresh the cached options list by scanning the image directory."""
-        new_options = await self.hass.async_add_executor_job(self._scan_image_directory)
+        new_options, new_scene_to_path = await self.hass.async_add_executor_job(self._scan_image_directory)
 
         if new_options != self._cached_options:
             old_count = len(self._cached_options)
             self._cached_options = new_options
+            self._scene_to_path = new_scene_to_path
             _LOGGER.debug(
                 "Options cache updated: %d -> %d scenes",
                 old_count,
@@ -213,23 +210,29 @@ class ChameleonSceneSelect(SelectEntity):
         else:
             _LOGGER.debug("Options cache unchanged (%d scenes)", len(new_options))
 
-    def _scan_image_directory(self) -> list[str]:
-        """Scan image directory for available scenes (runs in executor)."""
+    def _scan_image_directory(self) -> tuple[list[str], dict[str, Path]]:
+        """Scan image directory for available scenes (runs in executor).
+
+        Returns:
+            Tuple of (sorted scene names list, scene name to file path mapping)
+        """
         image_dir = Path(IMAGE_DIRECTORY)
 
         if not image_dir.exists():
             _LOGGER.warning("Image directory does not exist: %s", IMAGE_DIRECTORY)
-            return []
+            return [], {}
 
-        scenes = []
+        scene_to_path: dict[str, Path] = {}
         for ext in SUPPORTED_EXTENSIONS:
             for image_path in image_dir.glob(f"*{ext}"):
                 scene_name = _scene_name_from_filename(image_path.stem)
-                if scene_name not in scenes:
-                    scenes.append(scene_name)
+                # Only store first match if duplicate scene names exist
+                if scene_name not in scene_to_path:
+                    scene_to_path[scene_name] = image_path
 
+        scenes = sorted(scene_to_path.keys())
         _LOGGER.debug("Found %d scenes in %s: %s", len(scenes), IMAGE_DIRECTORY, scenes)
-        return sorted(scenes)
+        return scenes, scene_to_path
 
     @property
     def device_info(self):
@@ -461,35 +464,31 @@ class ChameleonSceneSelect(SelectEntity):
         return ApplyColorsResult(results=results)
 
     async def _find_image_for_scene(self, scene_name: str) -> Path | None:
-        """Find the image file path for a given scene name."""
-        return await self.hass.async_add_executor_job(self._find_image_for_scene_sync, scene_name)
+        """Find the image file path for a given scene name.
 
-    def _find_image_for_scene_sync(self, scene_name: str) -> Path | None:
-        """Find the image file path for a given scene name (sync version)."""
-        image_dir = Path(IMAGE_DIRECTORY)
-        filename_base = _filename_from_scene_name(scene_name)
+        Uses the cached scene-to-path mapping built during directory scan.
+        This properly handles filenames with spaces, underscores, or any other characters.
+        """
+        # First, try the cached mapping (most reliable, handles spaces in filenames)
+        if scene_name in self._scene_to_path:
+            image_path = self._scene_to_path[scene_name]
+            if image_path.exists():
+                _LOGGER.debug("Found image from cache: scene='%s' -> %s", scene_name, image_path)
+                return image_path
+            # Path cached but file no longer exists - will fall through to rescan
 
-        _LOGGER.debug(
-            "Searching for image: scene='%s', filename_base='%s'",
-            scene_name,
-            filename_base,
-        )
+        # Cache miss or stale cache - refresh and try again
+        _LOGGER.debug("Cache miss for scene '%s', refreshing options", scene_name)
+        await self._async_refresh_options()
 
-        for ext in SUPPORTED_EXTENSIONS:
-            # Try exact match first
-            image_path = image_dir / f"{filename_base}{ext}"
+        if scene_name in self._scene_to_path:
+            image_path = self._scene_to_path[scene_name]
             if image_path.exists():
                 return image_path
 
-            # Try case-insensitive search
-            for file in image_dir.glob(f"*{ext}"):
-                if file.stem.lower() == filename_base:
-                    return file
-
         _LOGGER.warning(
-            "No image found for scene '%s' in %s (tried extensions: %s)",
+            "No image found for scene '%s' in %s",
             scene_name,
-            image_dir,
-            SUPPORTED_EXTENSIONS,
+            IMAGE_DIRECTORY,
         )
         return None
