@@ -394,7 +394,8 @@ class ChameleonSceneSelect(SelectEntity):
     async def _apply_colors_animated(self, image_path: Path, brightness: int = 100) -> ApplyColorsResult:
         """Extract colors from image and start synchronized animation for lights.
 
-        All lights change color together, cycling through the gradient in sync.
+        Each light displays a different color from the gradient (distributed evenly),
+        and all lights cycle through colors together in sync.
         """
         animation_manager = self._get_animation_manager()
         if not animation_manager:
