@@ -112,7 +112,7 @@ class LightController:
         ColorMode.XY,
     }
 
-    def __init__(self, hass: HomeAssistant, transition_time: int = DEFAULT_TRANSITION_TIME) -> None:
+    def __init__(self, hass: HomeAssistant, transition_time: float = DEFAULT_TRANSITION_TIME) -> None:
         """Initialize the light controller.
 
         Args:
@@ -165,7 +165,7 @@ class LightController:
         self,
         entity_id: str,
         color: RGBColor,
-        transition: int | None = None,
+        transition: float | None = None,
         brightness: int | None = None,
         skip_availability_check: bool = False,
     ) -> LightResult:
@@ -252,7 +252,7 @@ class LightController:
     async def apply_colors_to_lights(
         self,
         light_colors: dict[str, RGBColor],
-        transition: int | None = None,
+        transition: float | None = None,
         brightness: int | None = None,
     ) -> ApplyColorsResult:
         """Apply colors to multiple lights.

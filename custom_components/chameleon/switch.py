@@ -15,6 +15,7 @@ from .const import (
     CONF_LIGHT_ENTITIES,
     CONF_LIGHT_ENTITY,
     DEFAULT_ANIMATION_ENABLED,
+    DEFAULT_SYNC_ANIMATION,
     DOMAIN,
 )
 
@@ -29,8 +30,8 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Chameleon switch entity from a config entry."""
-    _LOGGER.debug("Setting up Chameleon animation switch for entry: %s", entry.entry_id)
+    """Set up Chameleon switch entities from a config entry."""
+    _LOGGER.debug("Setting up Chameleon switch entities for entry: %s", entry.entry_id)
 
     # Support both old single-light and new multi-light config
     if CONF_LIGHT_ENTITIES in entry.data:
@@ -42,7 +43,10 @@ async def async_setup_entry(
     animation_enabled = entry.data.get(CONF_ANIMATION_ENABLED, DEFAULT_ANIMATION_ENABLED)
 
     async_add_entities(
-        [ChameleonAnimationSwitch(hass, entry, light_entities, animation_enabled)],
+        [
+            ChameleonAnimationSwitch(hass, entry, light_entities, animation_enabled),
+            ChameleonSyncAnimationSwitch(hass, entry, light_entities),
+        ],
         True,
     )
 
@@ -153,3 +157,100 @@ class ChameleonAnimationSwitch(SwitchEntity):
     def icon(self) -> str:
         """Return the icon based on state."""
         return "mdi:animation-play" if self._is_on else "mdi:animation"
+
+
+class ChameleonSyncAnimationSwitch(SwitchEntity):
+    """Switch entity for toggling synchronized vs staggered animation mode.
+
+    When ON: All lights change color simultaneously (synchronized)
+    When OFF: Each light changes color with random delays (staggered)
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "sync_animation"
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        light_entities: list[str],
+    ) -> None:
+        """Initialize the sync animation switch entity."""
+        self.hass = hass
+        self._entry = entry
+        self._light_entities = light_entities
+        self._is_on = DEFAULT_SYNC_ANIMATION  # Default to synchronized mode
+
+        # Generate unique ID and entity ID
+        first_light_name = light_entities[0].split(".")[-1]
+        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_sync_animation"
+        self.entity_id = f"switch.{first_light_name}_sync_animation"
+
+        _LOGGER.debug(
+            "ChameleonSyncAnimationSwitch initialized: entity_id=%s, unique_id=%s, is_on=%s",
+            self.entity_id,
+            self._attr_unique_id,
+            self._is_on,
+        )
+
+    @property
+    def device_info(self):
+        """Return device info for this entity."""
+        if len(self._light_entities) == 1:
+            name = f"Chameleon ({self._light_entities[0]})"
+        else:
+            name = f"Chameleon ({len(self._light_entities)} lights)"
+
+        return {
+            "identifiers": {(DOMAIN, self._entry.entry_id)},
+            "name": name,
+            "manufacturer": "Chameleon",
+            "model": "Scene Selector",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if sync mode is enabled (all lights animate together)."""
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable synchronized animation mode."""
+        self._is_on = True
+        _LOGGER.info("Sync animation enabled for %s", self._light_entities)
+
+        # Store sync state in hass.data for animation manager to use
+        self._store_sync_state()
+
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Enable staggered animation mode."""
+        self._is_on = False
+        _LOGGER.info("Staggered animation enabled for %s", self._light_entities)
+
+        # Store sync state in hass.data for animation manager to use
+        self._store_sync_state()
+
+        self.async_write_ha_state()
+
+    def _store_sync_state(self) -> None:
+        """Store the sync state in hass.data for other entities to access."""
+        if DOMAIN not in self.hass.data:
+            self.hass.data[DOMAIN] = {}
+        if self._entry.entry_id not in self.hass.data[DOMAIN]:
+            self.hass.data[DOMAIN][self._entry.entry_id] = {}
+
+        self.hass.data[DOMAIN][self._entry.entry_id]["sync_animation"] = self._is_on
+
+    @property
+    def extra_state_attributes(self):
+        """Return extra state attributes."""
+        return {
+            "light_entities": self._light_entities,
+            "mode": "synchronized" if self._is_on else "staggered",
+        }
+
+    @property
+    def icon(self) -> str:
+        """Return the icon based on state."""
+        return "mdi:sync" if self._is_on else "mdi:shuffle-variant"

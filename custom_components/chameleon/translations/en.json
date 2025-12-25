@@ -32,11 +32,22 @@
     "number": {
       "brightness": {
         "name": "Brightness"
+      },
+      "animation_speed": {
+        "name": "Animation Speed"
       }
     },
     "switch": {
       "animation": {
         "name": "Animation"
+      },
+      "sync_animation": {
+        "name": "Sync Lights"
+      }
+    },
+    "button": {
+      "refresh_scenes": {
+        "name": "Refresh Scenes"
       }
     }
   }

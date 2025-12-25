@@ -24,7 +24,7 @@ CONF_ANIMATION_ENABLED: Final = "animation_enabled"
 CONF_ANIMATION_SPEED: Final = "animation_speed"
 
 # Platforms
-PLATFORMS: Final = ["select", "number", "switch"]
+PLATFORMS: Final = ["select", "number", "switch", "button"]
 
 # Services
 SERVICE_APPLY_SCENE: Final = "apply_scene"
@@ -39,14 +39,22 @@ ATTR_MODE: Final = "mode"
 MODE_STATIC: Final = "static"
 MODE_ANIMATED: Final = "animated"
 
+# Special scene options
+SCENE_OFF: Final = "Off"  # Turn off all lights
+SCENE_RANDOM: Final = "Random"  # Pick a random scene
+
 # Color extraction
 DEFAULT_COLOR_COUNT: Final = 8  # Number of colors to extract for palette
 DEFAULT_QUALITY: Final = 10  # Color extraction quality (1 = highest, 10 = fastest)
 
 # Animation
-MIN_ANIMATION_SPEED: Final = 1  # Minimum seconds per transition
-MAX_ANIMATION_SPEED: Final = 60  # Maximum seconds per transition
-DEFAULT_TRANSITION_TIME: Final = 2  # Seconds for light transition effect
+MIN_ANIMATION_SPEED: Final = 0.1  # Minimum seconds per color change
+MAX_ANIMATION_SPEED: Final = 60  # Maximum seconds per color change
+DEFAULT_TRANSITION_TIME: Final = 0.1  # Instant snap transitions
+DEFAULT_SYNC_ANIMATION: Final = True  # All lights animate together by default
+
+# Configuration keys for new entities
+CONF_SYNC_ANIMATION: Final = "sync_animation"
 
 # Brightness
 DEFAULT_BRIGHTNESS: Final = 100  # Default brightness percentage

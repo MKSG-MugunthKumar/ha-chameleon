@@ -65,7 +65,7 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
                     NumberSelectorConfig(
                         min=MIN_ANIMATION_SPEED,
                         max=MAX_ANIMATION_SPEED,
-                        step=1,
+                        step=0.1,
                         unit_of_measurement="seconds",
                         mode=NumberSelectorMode.SLIDER,
                     )

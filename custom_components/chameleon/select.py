@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,9 +28,12 @@ from .const import (
     CONF_LIGHT_ENTITY,
     DEFAULT_BRIGHTNESS,
     DEFAULT_COLOR_COUNT,
+    DEFAULT_SYNC_ANIMATION,
     DOMAIN,
     IMAGE_DIRECTORY,
     OPTIONS_CACHE_INTERVAL,
+    SCENE_OFF,
+    SCENE_RANDOM,
     SUPPORTED_EXTENSIONS,
 )
 from .light_controller import ApplyColorsResult, LightController
@@ -97,7 +102,7 @@ class ChameleonSceneSelect(SelectEntity):
         entry: ConfigEntry,
         light_entities: list[str],
         animation_enabled: bool,
-        animation_speed: int,
+        animation_speed: float,
     ) -> None:
         """Initialize the select entity."""
         self.hass = hass
@@ -108,6 +113,10 @@ class ChameleonSceneSelect(SelectEntity):
         self._current_option: str | None = None
         self._applied_colors: dict[str, RGBColor] = {}  # Track colors applied to each light
         self._is_animating = False  # Track animation state
+
+        # Palette and diagnostics tracking
+        self._extracted_palette: list[RGBColor] = []  # Full extracted palette
+        self._last_scene_change: datetime | None = None  # Timestamp for automation triggers
 
         # Error tracking for UI feedback
         self._last_error: str | None = None
@@ -146,6 +155,16 @@ class ChameleonSceneSelect(SelectEntity):
         """Get brightness from runtime data (number slider) or fall back to default."""
         entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
         return entry_data.get("brightness", DEFAULT_BRIGHTNESS)
+
+    def _get_runtime_animation_speed(self) -> float:
+        """Get animation speed from runtime data (number slider) or fall back to config."""
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
+        return entry_data.get("animation_speed", self._animation_speed)
+
+    def _get_runtime_sync_animation(self) -> bool:
+        """Get sync animation state from runtime data (switch) or fall back to default."""
+        entry_data = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id, {})
+        return entry_data.get("sync_animation", DEFAULT_SYNC_ANIMATION)
 
     async def async_added_to_hass(self) -> None:
         """Run when entity is added to hass."""
@@ -261,6 +280,15 @@ class ChameleonSceneSelect(SelectEntity):
             "is_animating": self._is_animating,
         }
 
+        # Palette and diagnostics - useful for custom cards and automations
+        if self._extracted_palette:
+            # Convert tuples to lists for JSON serialization
+            attrs["extracted_palette"] = [list(c) for c in self._extracted_palette]
+            attrs["palette_count"] = len(self._extracted_palette)
+
+        if self._last_scene_change:
+            attrs["last_scene_change"] = self._last_scene_change.isoformat()
+
         # Add error info if present
         if self._last_error:
             attrs["last_error"] = self._last_error
@@ -271,8 +299,13 @@ class ChameleonSceneSelect(SelectEntity):
 
     @property
     def options(self) -> list[str]:
-        """Return the list of available scene options (cached)."""
-        return self._cached_options
+        """Return the list of available scene options (cached).
+
+        Includes special options at the beginning:
+        - 'Off': Turn off all lights
+        - 'Random': Pick a random scene from available images
+        """
+        return [SCENE_OFF, SCENE_RANDOM, *self._cached_options]
 
     @property
     def current_option(self) -> str | None:
@@ -281,17 +314,11 @@ class ChameleonSceneSelect(SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Handle the user selecting an option."""
-        # Get runtime values from switch/number entities (or fall back to config)
-        animation_enabled = self._get_runtime_animation_enabled()
-        brightness = self._get_runtime_brightness()
-
         _LOGGER.info(
-            "Scene selected: '%s' for %d light(s): %s (animation=%s, brightness=%d%%)",
+            "Scene selected: '%s' for %d light(s): %s",
             option,
             len(self._light_entities),
             self._light_entities,
-            animation_enabled,
-            brightness,
         )
 
         # Clear previous error state
@@ -300,6 +327,32 @@ class ChameleonSceneSelect(SelectEntity):
 
         # Stop any existing animations before applying new scene
         await self._stop_animations()
+
+        # Handle "Off" option - turn off all lights
+        if option == SCENE_OFF:
+            await self._turn_off_lights()
+            return
+
+        # Handle "Random" option - pick a random scene
+        if option == SCENE_RANDOM:
+            if not self._cached_options:
+                self._last_error = "No scenes available for random selection"
+                _LOGGER.warning(self._last_error)
+                self.async_write_ha_state()
+                return
+            # Pick a random scene from cached options (excluding special options)
+            option = random.choice(self._cached_options)
+            _LOGGER.info("Random scene selected: '%s'", option)
+
+        # Get runtime values from switch/number entities (or fall back to config)
+        animation_enabled = self._get_runtime_animation_enabled()
+        brightness = self._get_runtime_brightness()
+
+        _LOGGER.debug(
+            "Applying scene with animation=%s, brightness=%d%%",
+            animation_enabled,
+            brightness,
+        )
 
         # Find the image file for this scene
         image_path = await self._find_image_for_scene(option)
@@ -323,6 +376,7 @@ class ChameleonSceneSelect(SelectEntity):
             # All lights updated successfully
             self._current_option = option
             self._applied_colors = result.applied_colors
+            self._last_scene_change = datetime.now()
             mode = "animation started" if animation_enabled else "applied"
             _LOGGER.info("Scene '%s' %s successfully to all lights", option, mode)
         elif result.all_failed:
@@ -339,6 +393,7 @@ class ChameleonSceneSelect(SelectEntity):
             self._current_option = option
             self._applied_colors = result.applied_colors
             self._failed_lights = result.failed_lights
+            self._last_scene_change = datetime.now()
             self._last_error = f"Partial failure: {result.failed_count}/{len(result.results)} lights failed"
             _LOGGER.warning(
                 "Scene '%s' partially applied: %d/%d lights succeeded",
@@ -358,6 +413,8 @@ class ChameleonSceneSelect(SelectEntity):
             _LOGGER.debug("Extracting dominant color for single light")
             color = await extract_dominant_color(self.hass, image_path)
             if color:
+                # Store extracted palette (single color for single light)
+                self._extracted_palette = [color]
                 return await self._light_controller.apply_colors_to_lights(
                     {self._light_entities[0]: color},
                     brightness=brightness,
@@ -380,6 +437,9 @@ class ChameleonSceneSelect(SelectEntity):
 
             _LOGGER.debug("Extracted %d colors: %s", len(colors), colors[:num_lights])
 
+            # Store extracted palette for state attributes
+            self._extracted_palette = colors
+
             # Build light -> color mapping
             light_colors = {}
             for i, light_entity in enumerate(self._light_entities):
@@ -392,15 +452,20 @@ class ChameleonSceneSelect(SelectEntity):
             )
 
     async def _apply_colors_animated(self, image_path: Path, brightness: int = 100) -> ApplyColorsResult:
-        """Extract colors from image and start synchronized animation for lights.
+        """Extract colors from image and start animation for lights.
 
-        Each light displays a different color from the gradient (distributed evenly),
-        and all lights cycle through colors together in sync.
+        Supports two animation modes controlled by the sync_animation switch:
+        - Synchronized: All lights change color together
+        - Staggered: Each light changes independently with random delays
         """
         animation_manager = self._get_animation_manager()
         if not animation_manager:
             _LOGGER.error("AnimationManager not available")
             return ApplyColorsResult()
+
+        # Get runtime settings
+        animation_speed = self._get_runtime_animation_speed()
+        sync_animation = self._get_runtime_sync_animation()
 
         # Extract palette for animation
         colors = await extract_color_palette(
@@ -412,6 +477,9 @@ class ChameleonSceneSelect(SelectEntity):
         if not colors:
             _LOGGER.error("Failed to extract color palette from %s", image_path)
             return ApplyColorsResult()
+
+        # Store extracted palette for state attributes
+        self._extracted_palette = colors
 
         # Generate smooth gradient path for animation
         gradient = generate_gradient_path(colors, steps_between=10)
@@ -448,18 +516,34 @@ class ChameleonSceneSelect(SelectEntity):
                     )
                 )
 
-        # Start synchronized animation for all available lights
+        # Start animation for all available lights
         if available_lights:
-            await animation_manager.start_synchronized_animation(
-                available_lights,
-                gradient,
-                speed=self._animation_speed,
-                brightness=brightness,
-            )
-            _LOGGER.info(
-                "Started synchronized animation for %d lights",
-                len(available_lights),
-            )
+            if sync_animation:
+                # Synchronized mode: all lights change together
+                await animation_manager.start_synchronized_animation(
+                    available_lights,
+                    gradient,
+                    speed=animation_speed,
+                    brightness=brightness,
+                )
+                _LOGGER.info(
+                    "Started synchronized animation for %d lights (speed=%.1fs)",
+                    len(available_lights),
+                    animation_speed,
+                )
+            else:
+                # Staggered mode: each light changes with random delays
+                await animation_manager.start_staggered_animation(
+                    available_lights,
+                    gradient,
+                    speed=animation_speed,
+                    brightness=brightness,
+                )
+                _LOGGER.info(
+                    "Started staggered animation for %d lights (speed=%.1fs)",
+                    len(available_lights),
+                    animation_speed,
+                )
 
         self._is_animating = True
         return ApplyColorsResult(results=results)
@@ -493,3 +577,40 @@ class ChameleonSceneSelect(SelectEntity):
             IMAGE_DIRECTORY,
         )
         return None
+
+    async def _turn_off_lights(self) -> None:
+        """Turn off all configured lights.
+
+        This handles the 'Off' scene option, treating Chameleon like a light group.
+        """
+        _LOGGER.info("Turning off %d lights: %s", len(self._light_entities), self._light_entities)
+
+        failed_lights: dict[str, str] = {}
+
+        for light_entity in self._light_entities:
+            try:
+                await self.hass.services.async_call(
+                    "light",
+                    "turn_off",
+                    {"entity_id": light_entity},
+                    blocking=True,
+                )
+                _LOGGER.debug("Turned off %s", light_entity)
+            except Exception as e:
+                error_msg = str(e)
+                failed_lights[light_entity] = error_msg
+                _LOGGER.error("Failed to turn off %s: %s", light_entity, error_msg)
+
+        # Update state
+        if failed_lights:
+            self._failed_lights = failed_lights
+            if len(failed_lights) == len(self._light_entities):
+                self._last_error = "Failed to turn off any lights"
+            else:
+                self._last_error = f"Partial failure: {len(failed_lights)}/{len(self._light_entities)} lights failed"
+        else:
+            self._current_option = SCENE_OFF
+            self._applied_colors = {}  # Clear applied colors when off
+            _LOGGER.info("All lights turned off successfully")
+
+        self.async_write_ha_state()

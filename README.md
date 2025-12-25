@@ -148,9 +148,12 @@ cards:
 
 > **Note**: Replace `bedroom_lamp` with your light's base name. Entity IDs follow the pattern:
 >
-> - `select.{light_name}_scene`
-> - `number.{light_name}_brightness`
-> - `switch.{light_name}_animation`
+> - `select.{light_name}_scene` - Scene selection (includes Off, Random, and image scenes)
+> - `number.{light_name}_brightness` - Brightness control (1-100%)
+> - `number.{light_name}_animation_speed` - Animation speed (0.1-60 seconds)
+> - `switch.{light_name}_animation` - Enable/disable animation mode
+> - `switch.{light_name}_sync_animation` - Sync vs staggered animation mode
+> - `button.{light_name}_refresh_scenes` - Force rescan of image directory
 
 ### Custom Lovelace Card
 
@@ -167,13 +170,17 @@ We don't have a dedicated Lovelace card yet, but we'd love one! A custom card co
 
 The select entity exposes useful attributes:
 
-| Attribute        | Description                               |
-| ---------------- | ----------------------------------------- |
-| `light_entities` | List of configured light entity IDs       |
-| `light_count`    | Number of configured lights               |
-| `applied_colors` | Dict of entity_id → RGB color             |
-| `last_error`     | Error message if last operation failed    |
-| `failed_lights`  | Dict of failed lights with error messages |
+| Attribute           | Description                                          |
+| ------------------- | ---------------------------------------------------- |
+| `light_entities`    | List of configured light entity IDs                  |
+| `light_count`       | Number of configured lights                          |
+| `applied_colors`    | Dict of entity_id → RGB color                        |
+| `extracted_palette` | Full color palette from the image (list of RGB)      |
+| `palette_count`     | Number of colors in extracted palette                |
+| `last_scene_change` | ISO timestamp of last scene change (for automations) |
+| `is_animating`      | Whether animation is currently running               |
+| `last_error`        | Error message if last operation failed               |
+| `failed_lights`     | Dict of failed lights with error messages            |
 
 ### Services
 
@@ -452,6 +459,17 @@ Quick start:
 ---
 
 ## Future Features
+
+### Minor Tweaks
+
+- [x] **Off option** - "Off" scene turns off all lights (treat like a group/helper)
+- [x] **Animation speed entity** - Runtime-adjustable number entity (0.1s–60s slider)
+- [x] **Sync/staggered toggle** - Switch to animate all lights together vs. random staggered delays
+- [x] **Instant transitions** - Hardcoded 0.1s transition for snappy color changes
+- [x] **Random scene** - "Random" option picks a random scene from available images
+- [x] **Extracted palette** - Full color palette exposed in state attributes
+- [x] **Scene refresh button** - Force rescan of image directory without waiting
+- [x] **Last scene timestamp** - For automation triggers
 
 ### Custom Lovelace Card
 

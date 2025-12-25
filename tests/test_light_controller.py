@@ -128,7 +128,7 @@ class TestLightController:
         """Test controller initialization."""
         controller = LightController(hass)
         assert controller.hass is hass
-        assert controller.transition_time == 2  # Default
+        assert controller.transition_time == 0.1  # Default (instant snap)
 
     def test_init_custom_transition(self, hass):
         """Test controller with custom transition time."""
