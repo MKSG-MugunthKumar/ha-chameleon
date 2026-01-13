@@ -36,6 +36,7 @@ from .const import (
     SCENE_RANDOM,
     SUPPORTED_EXTENSIONS,
 )
+from .helpers import get_chameleon_device_name, get_entity_base_name
 from .light_controller import ApplyColorsResult, LightController
 
 if TYPE_CHECKING:
@@ -130,11 +131,10 @@ class ChameleonSceneSelect(SelectEntity):
         # Light controller for shared logic
         self._light_controller = LightController(hass)
 
-        # Generate unique ID and entity ID
-        # Use first light's name as the base (per CLAUDE.md: select.{light_base_name}_scene)
-        first_light_name = light_entities[0].split(".")[-1]
+        # Generate unique ID and entity ID with chameleon_ prefix
+        base_name = get_entity_base_name(hass, light_entities)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_scene"
-        self.entity_id = f"select.{first_light_name}_scene"
+        self.entity_id = f"select.chameleon_{base_name}_scene"
 
         _LOGGER.debug(
             "ChameleonSceneSelect initialized: entity_id=%s, unique_id=%s",
@@ -256,14 +256,9 @@ class ChameleonSceneSelect(SelectEntity):
     @property
     def device_info(self):
         """Return device info for this entity."""
-        if len(self._light_entities) == 1:
-            name = f"Chameleon ({self._light_entities[0]})"
-        else:
-            name = f"Chameleon ({len(self._light_entities)} lights)"
-
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": name,
+            "name": get_chameleon_device_name(self.hass, self._light_entities),
             "manufacturer": "Chameleon",
             "model": "Scene Selector",
         }

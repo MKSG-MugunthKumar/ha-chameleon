@@ -18,6 +18,7 @@ from .const import (
     DEFAULT_SYNC_ANIMATION,
     DOMAIN,
 )
+from .helpers import get_chameleon_device_name, get_entity_base_name
 
 if TYPE_CHECKING:
     from .animations import AnimationManager
@@ -70,10 +71,10 @@ class ChameleonAnimationSwitch(SwitchEntity):
         self._light_entities = light_entities
         self._is_on = initial_state
 
-        # Generate unique ID and entity ID
-        first_light_name = light_entities[0].split(".")[-1]
+        # Generate unique ID and entity ID with chameleon_ prefix
+        base_name = get_entity_base_name(hass, light_entities)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_animation"
-        self.entity_id = f"switch.{first_light_name}_animation"
+        self.entity_id = f"switch.chameleon_{base_name}_animation"
 
         _LOGGER.debug(
             "ChameleonAnimationSwitch initialized: entity_id=%s, unique_id=%s, is_on=%s",
@@ -89,14 +90,9 @@ class ChameleonAnimationSwitch(SwitchEntity):
     @property
     def device_info(self):
         """Return device info for this entity."""
-        if len(self._light_entities) == 1:
-            name = f"Chameleon ({self._light_entities[0]})"
-        else:
-            name = f"Chameleon ({len(self._light_entities)} lights)"
-
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": name,
+            "name": get_chameleon_device_name(self.hass, self._light_entities),
             "manufacturer": "Chameleon",
             "model": "Scene Selector",
         }
@@ -179,12 +175,12 @@ class ChameleonSyncAnimationSwitch(SwitchEntity):
         self.hass = hass
         self._entry = entry
         self._light_entities = light_entities
-        self._is_on = DEFAULT_SYNC_ANIMATION  # Default to synchronized mode
+        self._is_on = DEFAULT_SYNC_ANIMATION  # Default to staggered mode
 
-        # Generate unique ID and entity ID
-        first_light_name = light_entities[0].split(".")[-1]
+        # Generate unique ID and entity ID with chameleon_ prefix
+        base_name = get_entity_base_name(hass, light_entities)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_sync_animation"
-        self.entity_id = f"switch.{first_light_name}_sync_animation"
+        self.entity_id = f"switch.chameleon_{base_name}_sync_animation"
 
         _LOGGER.debug(
             "ChameleonSyncAnimationSwitch initialized: entity_id=%s, unique_id=%s, is_on=%s",
@@ -196,14 +192,9 @@ class ChameleonSyncAnimationSwitch(SwitchEntity):
     @property
     def device_info(self):
         """Return device info for this entity."""
-        if len(self._light_entities) == 1:
-            name = f"Chameleon ({self._light_entities[0]})"
-        else:
-            name = f"Chameleon ({len(self._light_entities)} lights)"
-
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": name,
+            "name": get_chameleon_device_name(self.hass, self._light_entities),
             "manufacturer": "Chameleon",
             "model": "Scene Selector",
         }

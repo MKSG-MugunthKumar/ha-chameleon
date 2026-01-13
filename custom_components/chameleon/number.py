@@ -22,6 +22,7 @@ from .const import (
     MIN_ANIMATION_SPEED,
     MIN_BRIGHTNESS,
 )
+from .helpers import get_chameleon_device_name, get_entity_base_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,10 +76,10 @@ class ChameleonBrightnessNumber(NumberEntity):
         self._light_entities = light_entities
         self._brightness = DEFAULT_BRIGHTNESS
 
-        # Generate unique ID and entity ID
-        first_light_name = light_entities[0].split(".")[-1]
+        # Generate unique ID and entity ID with chameleon_ prefix
+        base_name = get_entity_base_name(hass, light_entities)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_brightness"
-        self.entity_id = f"number.{first_light_name}_brightness"
+        self.entity_id = f"number.chameleon_{base_name}_brightness"
 
         _LOGGER.debug(
             "ChameleonBrightnessNumber initialized: entity_id=%s, unique_id=%s",
@@ -89,14 +90,9 @@ class ChameleonBrightnessNumber(NumberEntity):
     @property
     def device_info(self):
         """Return device info for this entity."""
-        if len(self._light_entities) == 1:
-            name = f"Chameleon ({self._light_entities[0]})"
-        else:
-            name = f"Chameleon ({len(self._light_entities)} lights)"
-
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": name,
+            "name": get_chameleon_device_name(self.hass, self._light_entities),
             "manufacturer": "Chameleon",
             "model": "Scene Selector",
         }
@@ -183,10 +179,10 @@ class ChameleonAnimationSpeedNumber(NumberEntity):
         self._light_entities = light_entities
         self._speed = initial_speed
 
-        # Generate unique ID and entity ID
-        first_light_name = light_entities[0].split(".")[-1]
+        # Generate unique ID and entity ID with chameleon_ prefix
+        base_name = get_entity_base_name(hass, light_entities)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_animation_speed"
-        self.entity_id = f"number.{first_light_name}_animation_speed"
+        self.entity_id = f"number.chameleon_{base_name}_animation_speed"
 
         _LOGGER.debug(
             "ChameleonAnimationSpeedNumber initialized: entity_id=%s, unique_id=%s, speed=%s",
@@ -198,14 +194,9 @@ class ChameleonAnimationSpeedNumber(NumberEntity):
     @property
     def device_info(self):
         """Return device info for this entity."""
-        if len(self._light_entities) == 1:
-            name = f"Chameleon ({self._light_entities[0]})"
-        else:
-            name = f"Chameleon ({len(self._light_entities)} lights)"
-
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": name,
+            "name": get_chameleon_device_name(self.hass, self._light_entities),
             "manufacturer": "Chameleon",
             "model": "Scene Selector",
         }

@@ -11,72 +11,34 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
 from .animations import AnimationManager
-from .color_extractor import extract_color_palette, generate_gradient_path
 from .const import (
-    ATTR_MODE,
     ATTR_SCENE_NAME,
-    DEFAULT_ANIMATION_SPEED,
-    DEFAULT_COLOR_COUNT,
     DOMAIN,
     IMAGE_DIRECTORY,
-    MODE_ANIMATED,
-    MODE_STATIC,
     PLATFORMS,
     SERVICE_APPLY_SCENE,
     SERVICE_START_ANIMATION,
     SERVICE_STOP_ANIMATION,
-    SUPPORTED_EXTENSIONS,
 )
-from .light_controller import LightController
 
 _LOGGER = logging.getLogger(__name__)
 
 type ChameleonConfigEntry = ConfigEntry[None]
 
-# Service schemas
+# Service schemas - now target Chameleon entities instead of lights
 SERVICE_APPLY_SCENE_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_ids,
         vol.Required(ATTR_SCENE_NAME): cv.string,
-        vol.Optional(ATTR_MODE, default=MODE_STATIC): vol.In([MODE_STATIC, MODE_ANIMATED]),
     }
 )
 
 SERVICE_START_ANIMATION_SCHEMA = vol.Schema(
     {
-        vol.Required("entity_id"): cv.entity_ids,
         vol.Required(ATTR_SCENE_NAME): cv.string,
     }
 )
 
-SERVICE_STOP_ANIMATION_SCHEMA = vol.Schema(
-    {
-        vol.Required("entity_id"): cv.entity_ids,
-    }
-)
-
-
-def _find_image_for_scene(scene_name: str) -> Path | None:
-    """Find image file for a scene name."""
-    image_dir = Path(IMAGE_DIRECTORY)
-    if not image_dir.exists():
-        return None
-
-    # Convert scene name to filename pattern
-    filename_base = scene_name.lower().replace(" ", "_")
-
-    for ext in SUPPORTED_EXTENSIONS:
-        # Try exact match
-        image_path = image_dir / f"{filename_base}{ext}"
-        if image_path.exists():
-            return image_path
-
-        # Try case-insensitive
-        for file in image_dir.glob(f"*{ext}"):
-            if file.stem.lower() == filename_base:
-                return file
-
-    return None
+SERVICE_STOP_ANIMATION_SCHEMA = vol.Schema({})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ChameleonConfigEntry) -> bool:
@@ -128,58 +90,56 @@ async def async_unload_entry(hass: HomeAssistant, entry: ChameleonConfigEntry) -
 
 
 async def _async_register_services(hass: HomeAssistant) -> None:
-    """Register Chameleon services."""
+    """Register Chameleon services.
+
+    Services now target Chameleon entities instead of raw lights:
+    - apply_scene: Targets select.chameleon_* entities
+    - start_animation: Targets select.chameleon_* entities (enables animation first)
+    - stop_animation: Targets switch.chameleon_*_animation entities
+    """
 
     async def handle_apply_scene(call: ServiceCall) -> None:
-        """Handle the apply_scene service call."""
-        entity_ids: list[str] = call.data["entity_id"]
+        """Handle the apply_scene service call.
+
+        Targets Chameleon select entities and sets their value to the scene name.
+        """
+        entity_ids: list[str] = call.data.get("entity_id", [])
         scene_name: str = call.data[ATTR_SCENE_NAME]
-        mode: str = call.data.get(ATTR_MODE, MODE_STATIC)
 
         _LOGGER.info(
-            "Service apply_scene: entities=%s, scene=%s, mode=%s",
+            "Service apply_scene: entities=%s, scene=%s",
             entity_ids,
             scene_name,
-            mode,
         )
 
-        # Find image file
-        image_path = await hass.async_add_executor_job(_find_image_for_scene, scene_name)
-        if not image_path:
-            _LOGGER.error("Scene '%s' not found in %s", scene_name, IMAGE_DIRECTORY)
-            return
-
-        # Extract colors
-        colors = await extract_color_palette(
-            hass,
-            image_path,
-            color_count=max(len(entity_ids), DEFAULT_COLOR_COUNT),
-        )
-
-        if not colors:
-            _LOGGER.error("Failed to extract colors from %s", image_path)
-            return
-
-        if mode == MODE_ANIMATED:
-            # Start animation for each light
-            animation_manager: AnimationManager = hass.data[DOMAIN]["animation_manager"]
-            gradient = generate_gradient_path(colors, steps_between=10)
-
-            for entity_id in entity_ids:
-                await animation_manager.start_animation(
+        for entity_id in entity_ids:
+            # Validate this is a Chameleon select entity
+            if not entity_id.startswith("select.chameleon_"):
+                _LOGGER.warning(
+                    "Skipping %s: not a Chameleon select entity",
                     entity_id,
-                    gradient,
-                    speed=DEFAULT_ANIMATION_SPEED,
                 )
-        else:
-            # Static mode - apply colors directly
-            light_controller = LightController(hass)
-            light_colors = {entity_ids[i]: colors[i % len(colors)] for i in range(len(entity_ids))}
-            await light_controller.apply_colors_to_lights(light_colors)
+                continue
+
+            # Call the select service to set the scene
+            await hass.services.async_call(
+                "select",
+                "select_option",
+                {
+                    "entity_id": entity_id,
+                    "option": scene_name,
+                },
+                blocking=True,
+            )
+            _LOGGER.debug("Applied scene '%s' to %s", scene_name, entity_id)
 
     async def handle_start_animation(call: ServiceCall) -> None:
-        """Handle the start_animation service call."""
-        entity_ids: list[str] = call.data["entity_id"]
+        """Handle the start_animation service call.
+
+        Targets Chameleon select entities. Enables the animation switch first,
+        then applies the scene.
+        """
+        entity_ids: list[str] = call.data.get("entity_id", [])
         scene_name: str = call.data[ATTR_SCENE_NAME]
 
         _LOGGER.info(
@@ -188,43 +148,67 @@ async def _async_register_services(hass: HomeAssistant) -> None:
             scene_name,
         )
 
-        # Find image file
-        image_path = await hass.async_add_executor_job(_find_image_for_scene, scene_name)
-        if not image_path:
-            _LOGGER.error("Scene '%s' not found in %s", scene_name, IMAGE_DIRECTORY)
-            return
-
-        # Extract colors and generate gradient
-        colors = await extract_color_palette(
-            hass,
-            image_path,
-            color_count=DEFAULT_COLOR_COUNT,
-        )
-
-        if not colors:
-            _LOGGER.error("Failed to extract colors from %s", image_path)
-            return
-
-        gradient = generate_gradient_path(colors, steps_between=10)
-
-        # Start animation for each light
-        animation_manager: AnimationManager = hass.data[DOMAIN]["animation_manager"]
         for entity_id in entity_ids:
-            await animation_manager.start_animation(
-                entity_id,
-                gradient,
-                speed=DEFAULT_ANIMATION_SPEED,
+            # Validate this is a Chameleon select entity
+            if not entity_id.startswith("select.chameleon_"):
+                _LOGGER.warning(
+                    "Skipping %s: not a Chameleon select entity",
+                    entity_id,
+                )
+                continue
+
+            # Derive the animation switch entity ID from the select entity ID
+            # select.chameleon_hallway_scene -> switch.chameleon_hallway_animation
+            base = entity_id.replace("select.", "").replace("_scene", "")
+            animation_switch_id = f"switch.{base}_animation"
+
+            # Turn on the animation switch
+            await hass.services.async_call(
+                "switch",
+                "turn_on",
+                {"entity_id": animation_switch_id},
+                blocking=True,
             )
+            _LOGGER.debug("Enabled animation: %s", animation_switch_id)
+
+            # Apply the scene
+            await hass.services.async_call(
+                "select",
+                "select_option",
+                {
+                    "entity_id": entity_id,
+                    "option": scene_name,
+                },
+                blocking=True,
+            )
+            _LOGGER.debug("Applied scene '%s' to %s", scene_name, entity_id)
 
     async def handle_stop_animation(call: ServiceCall) -> None:
-        """Handle the stop_animation service call."""
-        entity_ids: list[str] = call.data["entity_id"]
+        """Handle the stop_animation service call.
+
+        Targets Chameleon animation switch entities and turns them off.
+        """
+        entity_ids: list[str] = call.data.get("entity_id", [])
 
         _LOGGER.info("Service stop_animation: entities=%s", entity_ids)
 
-        animation_manager: AnimationManager = hass.data[DOMAIN]["animation_manager"]
         for entity_id in entity_ids:
-            await animation_manager.stop_animation(entity_id)
+            # Validate this is a Chameleon switch entity
+            if not entity_id.startswith("switch.chameleon_"):
+                _LOGGER.warning(
+                    "Skipping %s: not a Chameleon switch entity",
+                    entity_id,
+                )
+                continue
+
+            # Turn off the animation switch
+            await hass.services.async_call(
+                "switch",
+                "turn_off",
+                {"entity_id": entity_id},
+                blocking=True,
+            )
+            _LOGGER.debug("Stopped animation: %s", entity_id)
 
     # Register all services
     hass.services.async_register(
@@ -248,4 +232,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         schema=SERVICE_STOP_ANIMATION_SCHEMA,
     )
 
-    _LOGGER.info("Registered Chameleon services: %s, %s, %s", SERVICE_APPLY_SCENE, SERVICE_START_ANIMATION, SERVICE_STOP_ANIMATION)
+    _LOGGER.info(
+        "Registered Chameleon services: %s, %s, %s",
+        SERVICE_APPLY_SCENE,
+        SERVICE_START_ANIMATION,
+        SERVICE_STOP_ANIMATION,
+    )

@@ -25,6 +25,7 @@ from .const import (
     MAX_ANIMATION_SPEED,
     MIN_ANIMATION_SPEED,
 )
+from .helpers import get_entry_title
 
 
 class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -44,8 +45,8 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(unique_id)
             self._abort_if_unique_id_configured()
 
-            # Create the config entry
-            title = self._get_entry_title(light_entities)
+            # Create the config entry with area-aware naming
+            title = get_entry_title(self.hass, light_entities)
             return self.async_create_entry(
                 title=title,
                 data=user_input,
@@ -78,25 +79,3 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=data_schema,
             errors=errors,
         )
-
-    def _get_entry_title(self, entity_ids: list[str]) -> str:
-        """Get a friendly title for the config entry."""
-        if len(entity_ids) == 1:
-            return self._get_light_name(entity_ids[0])
-
-        # For multiple lights, use count or abbreviated list
-        if len(entity_ids) <= 3:
-            names = [self._get_light_name(e) for e in entity_ids]
-            return ", ".join(names)
-
-        # Too many to list - use count
-        first_name = self._get_light_name(entity_ids[0])
-        return f"{first_name} + {len(entity_ids) - 1} more"
-
-    def _get_light_name(self, entity_id: str) -> str:
-        """Get a friendly name for a light entity."""
-        state = self.hass.states.get(entity_id)
-        if state and state.attributes.get("friendly_name"):
-            return state.attributes["friendly_name"]
-        # Fall back to entity_id without domain
-        return entity_id.split(".")[-1].replace("_", " ").title()

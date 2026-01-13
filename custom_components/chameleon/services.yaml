@@ -1,44 +1,26 @@
 apply_scene:
   name: Apply Scene
-  description: Apply colors from an image scene to lights
+  description: Apply colors from an image scene to a Chameleon configuration
+  target:
+    entity:
+      domain: select
+      integration: chameleon
   fields:
-    entity_id:
-      name: Entity
-      description: Light entity or entities to apply the scene to
-      required: true
-      selector:
-        entity:
-          domain: light
     scene_name:
       name: Scene Name
       description: Name of the scene (image) to apply
       required: true
       selector:
         text: {}
-    mode:
-      name: Mode
-      description: How to apply the colors
-      required: false
-      default: static
-      selector:
-        select:
-          options:
-            - label: Static (single color)
-              value: static
-            - label: Animated (cycle colors)
-              value: animated
 
 start_animation:
   name: Start Animation
-  description: Start color animation for lights using a scene
+  description: Enable animation mode and apply a scene
+  target:
+    entity:
+      domain: select
+      integration: chameleon
   fields:
-    entity_id:
-      name: Entity
-      description: Light entity or entities to animate
-      required: true
-      selector:
-        entity:
-          domain: light
     scene_name:
       name: Scene Name
       description: Name of the scene (image) to use for animation
@@ -48,12 +30,8 @@ start_animation:
 
 stop_animation:
   name: Stop Animation
-  description: Stop color animation for lights
-  fields:
-    entity_id:
-      name: Entity
-      description: Light entity or entities to stop animating
-      required: true
-      selector:
-        entity:
-          domain: light
+  description: Stop color animation
+  target:
+    entity:
+      domain: switch
+      integration: chameleon

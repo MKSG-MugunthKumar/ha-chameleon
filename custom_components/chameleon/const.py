@@ -51,7 +51,7 @@ DEFAULT_QUALITY: Final = 10  # Color extraction quality (1 = highest, 10 = faste
 MIN_ANIMATION_SPEED: Final = 0.1  # Minimum seconds per color change
 MAX_ANIMATION_SPEED: Final = 60  # Maximum seconds per color change
 DEFAULT_TRANSITION_TIME: Final = 0.1  # Instant snap transitions
-DEFAULT_SYNC_ANIMATION: Final = True  # All lights animate together by default
+DEFAULT_SYNC_ANIMATION: Final = False  # Staggered animation by default (more natural)
 
 # Configuration keys for new entities
 CONF_SYNC_ANIMATION: Final = "sync_animation"

@@ -14,6 +14,7 @@ from .const import (
     CONF_LIGHT_ENTITY,
     DOMAIN,
 )
+from .helpers import get_chameleon_device_name, get_entity_base_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,10 +61,11 @@ class ChameleonRefreshButton(ButtonEntity):
         self._entry = entry
         self._light_entities = light_entities
 
-        # Generate unique ID and entity ID
-        first_light_name = light_entities[0].split(".")[-1]
+        # Generate unique ID and entity ID with chameleon_ prefix
+        base_name = get_entity_base_name(hass, light_entities)
+        self._base_name = base_name  # Store for use in async_press
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_refresh"
-        self.entity_id = f"button.{first_light_name}_refresh_scenes"
+        self.entity_id = f"button.chameleon_{base_name}_refresh_scenes"
 
         _LOGGER.debug(
             "ChameleonRefreshButton initialized: entity_id=%s, unique_id=%s",
@@ -74,14 +76,9 @@ class ChameleonRefreshButton(ButtonEntity):
     @property
     def device_info(self):
         """Return device info for this entity."""
-        if len(self._light_entities) == 1:
-            name = f"Chameleon ({self._light_entities[0]})"
-        else:
-            name = f"Chameleon ({len(self._light_entities)} lights)"
-
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": name,
+            "name": get_chameleon_device_name(self.hass, self._light_entities),
             "manufacturer": "Chameleon",
             "model": "Scene Selector",
         }
@@ -91,7 +88,7 @@ class ChameleonRefreshButton(ButtonEntity):
         _LOGGER.info("Refresh scenes button pressed for entry: %s", self._entry.entry_id)
 
         # Find the select entity for this entry and trigger a refresh
-        select_entity_id = f"select.{self._light_entities[0].split('.')[-1]}_scene"
+        select_entity_id = f"select.chameleon_{self._base_name}_scene"
         select_entity = self.hass.states.get(select_entity_id)
 
         if select_entity:
