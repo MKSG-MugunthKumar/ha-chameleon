@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,9 +63,7 @@ def get_chameleon_device_name(hass: HomeAssistant, light_entities: list[str]) ->
     area_ids: set[str | None] = set()
 
     for entity_id in light_entities:
-        area_id = _get_entity_area_id(
-            entity_id, entity_registry, device_registry
-        )
+        area_id = _get_entity_area_id(entity_id, entity_registry, device_registry)
         area_ids.add(area_id)
 
     # Filter out None values
@@ -91,8 +91,8 @@ def get_chameleon_device_name(hass: HomeAssistant, light_entities: list[str]) ->
 
 def _get_entity_area_id(
     entity_id: str,
-    entity_registry: "er.EntityRegistry",
-    device_registry: "dr.DeviceRegistry",
+    entity_registry: er.EntityRegistry,
+    device_registry: dr.DeviceRegistry,
 ) -> str | None:
     """Get the area ID for an entity, checking entity and device assignments.
 
@@ -104,10 +104,6 @@ def _get_entity_area_id(
     Returns:
         Area ID if found, None otherwise
     """
-    # Import types for type hints
-    from homeassistant.helpers import device_registry as dr
-    from homeassistant.helpers import entity_registry as er
-
     entity_entry = entity_registry.async_get(entity_id)
     if not entity_entry:
         return None
@@ -169,9 +165,7 @@ def get_entry_title(hass: HomeAssistant, light_entities: list[str]) -> str:
     area_ids: set[str | None] = set()
 
     for entity_id in light_entities:
-        area_id = _get_entity_area_id(
-            entity_id, entity_registry, device_registry
-        )
+        area_id = _get_entity_area_id(entity_id, entity_registry, device_registry)
         area_ids.add(area_id)
 
     # Filter out None values
