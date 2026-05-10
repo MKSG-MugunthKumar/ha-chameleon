@@ -246,7 +246,7 @@ Check the `last_error` and `failed_lights` attributes for details.
 
 ## Database Considerations
 
-Chameleon uses light transitions (default: 2 seconds) for smooth color changes. This means one state change per transition, not per color step. Animation mode creates frequent state changes. At 1 color/second, that's **86,400 database writes per day** per light.
+Chameleon uses an instant transition (`0.1s`) for snappy color changes — animation mode creates one state change per color tick. At 1 color/second that's **86,400 database writes per day** per light.
 
 ### Recommended: Recorder Exclusion
 
@@ -264,13 +264,14 @@ recorder:
 
 ### Animation Speed
 
-Default animation interval is 5 seconds. Adjust based on your needs:
+The animation speed slider runs from `0` to `10` seconds (default: 5s). The slider has 100 positions, so dragging is precise.
 
-- **Slow (10-60s)**: Subtle ambiance
-- **Medium (5-10s)**: Good balance
-- **Fast (1-5s)**: More dynamic
+- **0** — Static. Animation is disabled and the scene is applied as a single color (or palette across multiple lights).
+- **0.1–1s** — Snappy, energetic. Good for parties, music sync, or emphasizing a single light.
+- **1–5s** — Dynamic but watchable. The default range for "ambient lighting that changes."
+- **5–10s** — Subtle, slow drift. Best for background ambience.
 
-Regardless of speed, consider recorder exclusion for animated lights.
+Regardless of speed, consider recorder exclusion for animated lights — even at 5s, that's ~17,000 state changes per day per light.
 
 ## Troubleshooting
 
@@ -279,7 +280,7 @@ Regardless of speed, consider recorder exclusion for animated lights.
 1. Verify `/config/www/chameleon/` directory exists
 2. Check file extensions are `.jpg`, `.jpeg`, or `.png`
 3. Check logs: `logger.logs.custom_components.chameleon: debug`
-4. Options refresh every 30 seconds
+4. Call `chameleon.refresh_scenes` from Developer Tools → Actions, or reload the integration to trigger a directory rescan
 
 ### Colors Look Wrong
 
@@ -494,14 +495,16 @@ Quick start:
 
 ### Minor Tweaks
 
-- [x] **Off option** - "Off" scene turns off all lights (treat like a group/helper)
-- [x] **Animation speed entity** - Runtime-adjustable number entity (0.1s–60s slider)
-- [x] **Sync/staggered toggle** - Switch to animate all lights together vs. random staggered delays
+- [x] **Off option** - "Off" scene turns off all lights
+- [x] **Animation speed entity** - Runtime-adjustable number entity (0–10s, 0 = static)
+- [x] **Sync/staggered modes** - `select.{light}_animation_mode` lets each light cycle in lockstep or with organic random delays
 - [x] **Instant transitions** - Hardcoded 0.1s transition for snappy color changes
 - [x] **Random scene** - "Random" option picks a random scene from available images
+- [x] **Dominant color attributes** - `dominant_color`, `dominant_color_hex`, plus HSV decomposition for template-driven dashboards and "warm vs cool" automations
 - [x] **Extracted palette** - Full color palette exposed in state attributes
-- [x] ~~**Scene refresh button**~~ - removed; directory auto-rescans every 30s
+- [x] **Refresh scenes service** - `chameleon.refresh_scenes` rescans the image directory on demand (no polling)
 - [x] **Last scene timestamp** - For automation triggers
+- [x] **Semantic zero-values** - Brightness 0 = lights off (restores last non-zero on bump up); Speed 0 = static (no animation loop). Removes the need for separate on/off switches.
 
 ### Custom Lovelace Card
 
