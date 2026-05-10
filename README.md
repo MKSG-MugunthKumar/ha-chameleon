@@ -148,7 +148,6 @@ cards:
 >
 > After adding or removing image files in `/config/www/chameleon/`, refresh the scene list with the **`chameleon.refresh_scenes`** action (Developer Tools → Actions, or call from an automation). The list is also refreshed automatically when the integration is reloaded (Settings → Devices & Services → Chameleon → ⋯ → Reload).
 >
->
 > Setting **brightness to 0** is equivalent to selecting the "Off" scene — lights turn off and the previous brightness is restored when the slider goes back above zero.
 >
 > Setting **animation speed to 0** disables animation — the scene is applied as a static color (or palette across multiple lights). There is no separate animation on/off switch.
@@ -157,21 +156,21 @@ cards:
 
 The select entity exposes useful attributes:
 
-| Attribute              | Description                                                                                                                                            |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `light_entities`       | List of configured light entity IDs                                                                                                                    |
-| `light_count`          | Number of configured lights                                                                                                                            |
-| `applied_colors`       | Dict of entity_id → RGB color (populated for static scenes; empty during animation)                                                                    |
-| `extracted_palette`    | Raw output from ColorThief — a list of `[R, G, B]` triples representing the most prominent colors in the image, ordered by dominance (most common first). Use `extracted_palette \| length` for the count. |
-| `dominant_color`       | First (most-dominant) palette entry as `[R, G, B]`. Single representative color for the scene.                                                         |
-| `dominant_color_hex`   | Same color in `#RRGGBB` form — drop directly into `background:` styles in cards.                                                                       |
-| `dominant_hue`         | Hue of the dominant color, 0–360°. Useful for "warm vs cool" template branches (warm ≈ 0–60 + 300–360, cool ≈ 180–270).                                |
-| `dominant_saturation`  | Saturation of the dominant color, 0–1. Vivid vs muted (>0.6 vivid, <0.3 washed-out).                                                                   |
-| `dominant_value`       | Value (brightness) of the dominant color, 0–1. Bright vs dark scene.                                                                                   |
-| `last_scene_change`    | ISO timestamp of last scene change (for automation triggers)                                                                                           |
-| `is_animating`         | Whether animation is currently running                                                                                                                 |
-| `last_error`           | Error message if last operation failed (cleared on success)                                                                                            |
-| `failed_lights`        | Dict of failed lights with error messages                                                                                                              |
+| Attribute             | Description                                                                                                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `light_entities`      | List of configured light entity IDs                                                                                                                                                                        |
+| `light_count`         | Number of configured lights                                                                                                                                                                                |
+| `applied_colors`      | Dict of entity_id → RGB color (populated for static scenes; empty during animation)                                                                                                                        |
+| `extracted_palette`   | Raw output from ColorThief — a list of `[R, G, B]` triples representing the most prominent colors in the image, ordered by dominance (most common first). Use `extracted_palette \| length` for the count. |
+| `dominant_color`      | First (most-dominant) palette entry as `[R, G, B]`. Single representative color for the scene.                                                                                                             |
+| `dominant_color_hex`  | Same color in `#RRGGBB` form — drop directly into `background:` styles in cards.                                                                                                                           |
+| `dominant_hue`        | Hue of the dominant color, 0–360°. Useful for "warm vs cool" template branches (warm ≈ 0–60 + 300–360, cool ≈ 180–270).                                                                                    |
+| `dominant_saturation` | Saturation of the dominant color, 0–1. Vivid vs muted (>0.6 vivid, <0.3 washed-out).                                                                                                                       |
+| `dominant_value`      | Value (brightness) of the dominant color, 0–1. Bright vs dark scene.                                                                                                                                       |
+| `last_scene_change`   | ISO timestamp of last scene change (for automation triggers)                                                                                                                                               |
+| `is_animating`        | Whether animation is currently running                                                                                                                                                                     |
+| `last_error`          | Error message if last operation failed (cleared on success)                                                                                                                                                |
+| `failed_lights`       | Dict of failed lights with error messages                                                                                                                                                                  |
 
 ### Service Actions
 
@@ -309,16 +308,16 @@ Are you a developer? Continue reading for architecture details, error handling s
 
 ### Module Responsibilities
 
-| Module                | Responsibility                                                  |
-| --------------------- | --------------------------------------------------------------- |
-| `__init__.py`         | Integration entry point, setup/unload, services                 |
-| `config_flow.py`      | UI configuration flow                                           |
-| `const.py`            | All constants and configuration keys                            |
-| `select.py`           | Scene select + animation mode select                            |
-| `number.py`           | Brightness and animation speed sliders (with zero-value off)    |
-| `light_controller.py` | Shared light control logic (availability, color application)    |
-| `color_extractor.py`  | Color extraction from images                                    |
-| `animations.py`       | Single AnimationController + AnimationManager (one per entry)   |
+| Module                | Responsibility                                                |
+| --------------------- | ------------------------------------------------------------- |
+| `__init__.py`         | Integration entry point, setup/unload, services               |
+| `config_flow.py`      | UI configuration flow                                         |
+| `const.py`            | All constants and configuration keys                          |
+| `select.py`           | Scene select + animation mode select                          |
+| `number.py`           | Brightness and animation speed sliders (with zero-value off)  |
+| `light_controller.py` | Shared light control logic (availability, color application)  |
+| `color_extractor.py`  | Color extraction from images                                  |
+| `animations.py`       | Single AnimationController + AnimationManager (one per entry) |
 
 ### Key Design Pattern: Separation of Concerns
 
