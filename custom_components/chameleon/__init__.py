@@ -14,14 +14,15 @@ from homeassistant.helpers import entity_registry as er
 from .animations import AnimationManager
 from .const import (
     ATTR_SCENE_NAME,
-    DEFAULT_ANIMATION_SPEED,
     DOMAIN,
     IMAGE_DIRECTORY,
+    MAX_ANIMATION_SPEED,
+    MAX_BRIGHTNESS,
+    MIN_ANIMATION_SPEED,
+    MIN_BRIGHTNESS,
     PLATFORMS,
     SERVICE_APPLY_SCENE,
     SERVICE_REFRESH_SCENES,
-    SERVICE_START_ANIMATION,
-    SERVICE_STOP_ANIMATION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,16 +32,10 @@ type ChameleonConfigEntry = ConfigEntry[None]
 SERVICE_APPLY_SCENE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_SCENE_NAME): cv.string,
+        vol.Optional("brightness"): vol.All(vol.Coerce(int), vol.Range(min=MIN_BRIGHTNESS, max=MAX_BRIGHTNESS)),
+        vol.Optional("speed"): vol.All(vol.Coerce(float), vol.Range(min=MIN_ANIMATION_SPEED, max=MAX_ANIMATION_SPEED)),
     }
 )
-
-SERVICE_START_ANIMATION_SCHEMA = vol.Schema(
-    {
-        vol.Required(ATTR_SCENE_NAME): cv.string,
-    }
-)
-
-SERVICE_STOP_ANIMATION_SCHEMA = vol.Schema({})
 
 SERVICE_REFRESH_SCENES_SCHEMA = vol.Schema({})
 
@@ -89,8 +84,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # entries in the integrations page:
         #   - the two animation/sync_animation switches (collapsed into speed=0
         #     and the new animation_mode select)
-        #   - the refresh-scenes button (the directory auto-rescans every 30s,
-        #     so the manual button was redundant)
+        #   - the refresh-scenes button (replaced by the chameleon.refresh_scenes
+        #     service action)
         orphan_unique_ids = {
             f"{DOMAIN}_{entry.entry_id}_animation",
             f"{DOMAIN}_{entry.entry_id}_sync_animation",
@@ -124,60 +119,70 @@ async def async_unload_entry(hass: HomeAssistant, entry: ChameleonConfigEntry) -
     return unload_ok
 
 
-def _scene_entity_to_speed_entity(scene_entity_id: str) -> str:
-    """Map ``select.chameleon_<base>_scene`` → ``number.chameleon_<base>_animation_speed``."""
+def _scene_entity_sibling(scene_entity_id: str, sibling_suffix: str, domain: str = "number") -> str:
+    """Derive a sibling entity ID from a Chameleon scene select entity ID.
+
+    ``select.chameleon_living_room_scene`` + ``"animation_speed"`` →
+    ``number.chameleon_living_room_animation_speed``.
+    """
     base = scene_entity_id.removeprefix("select.").removesuffix("_scene")
-    return f"number.{base}_animation_speed"
+    return f"{domain}.{base}_{sibling_suffix}"
 
 
 async def _async_register_services(hass: HomeAssistant) -> None:
     """Register Chameleon services.
 
-    All three services target the Chameleon scene select entity for consistency.
-    Animation on/off is now derived from the animation_speed value (>0 = on,
-    0 = off), so start/stop are implemented by setting the speed slider.
+    Two services:
+
+    - ``apply_scene``: targets the scene select entity. Optionally accepts
+      ``brightness`` and ``speed`` to set those sliders before the scene is
+      applied — covers the old ``start_animation`` / ``stop_animation`` cases
+      (pass ``speed > 0`` to start, ``speed = 0`` to stop) without separate
+      services.
+    - ``refresh_scenes``: rescans the image directory for every Chameleon
+      config. No target needed.
+
+    Direct slider control still goes through ``number.set_value`` per HA
+    convention — we don't wrap it.
     """
 
     async def handle_apply_scene(call: ServiceCall) -> None:
-        """Apply a scene by name to the targeted scene select entities."""
+        """Apply a scene, optionally setting brightness and/or speed first.
+
+        ``brightness`` and ``speed`` are optional; if omitted, the existing slider
+        values are kept. When supplied, the sliders are set *before* the scene is
+        applied so the new scene is rendered at the requested values directly
+        (rather than at the old values then bumped).
+        """
         entity_ids: list[str] = call.data.get("entity_id", [])
         scene_name: str = call.data[ATTR_SCENE_NAME]
+        brightness = call.data.get("brightness")
+        speed = call.data.get("speed")
 
         for entity_id in entity_ids:
             if not entity_id.startswith("select.chameleon_"):
                 _LOGGER.warning("Skipping %s: not a Chameleon select entity", entity_id)
                 continue
 
-            await hass.services.async_call(
-                "select",
-                "select_option",
-                {"entity_id": entity_id, "option": scene_name},
-                blocking=True,
-            )
-
-    async def handle_start_animation(call: ServiceCall) -> None:
-        """Ensure animation is enabled (speed > 0) and apply a scene."""
-        entity_ids: list[str] = call.data.get("entity_id", [])
-        scene_name: str = call.data[ATTR_SCENE_NAME]
-
-        for entity_id in entity_ids:
-            if not entity_id.startswith("select.chameleon_"):
-                _LOGGER.warning("Skipping %s: not a Chameleon select entity", entity_id)
-                continue
-
-            speed_entity_id = _scene_entity_to_speed_entity(entity_id)
-            speed_state = hass.states.get(speed_entity_id)
-            current_speed = float(speed_state.state) if speed_state and speed_state.state not in ("unknown", "unavailable") else 0.0
-
-            if current_speed <= 0:
-                # Restore last non-zero speed if known, else fall back to default.
-                target_speed = (
-                    float(speed_state.attributes.get("last_nonzero", DEFAULT_ANIMATION_SPEED)) if speed_state else float(DEFAULT_ANIMATION_SPEED)
-                )
+            if brightness is not None:
                 await hass.services.async_call(
                     "number",
                     "set_value",
-                    {"entity_id": speed_entity_id, "value": target_speed},
+                    {
+                        "entity_id": _scene_entity_sibling(entity_id, "brightness"),
+                        "value": brightness,
+                    },
+                    blocking=True,
+                )
+
+            if speed is not None:
+                await hass.services.async_call(
+                    "number",
+                    "set_value",
+                    {
+                        "entity_id": _scene_entity_sibling(entity_id, "animation_speed"),
+                        "value": speed,
+                    },
                     blocking=True,
                 )
 
@@ -185,23 +190,6 @@ async def _async_register_services(hass: HomeAssistant) -> None:
                 "select",
                 "select_option",
                 {"entity_id": entity_id, "option": scene_name},
-                blocking=True,
-            )
-
-    async def handle_stop_animation(call: ServiceCall) -> None:
-        """Stop animation by setting the speed slider to 0."""
-        entity_ids: list[str] = call.data.get("entity_id", [])
-
-        for entity_id in entity_ids:
-            if not entity_id.startswith("select.chameleon_"):
-                _LOGGER.warning("Skipping %s: not a Chameleon select entity", entity_id)
-                continue
-
-            speed_entity_id = _scene_entity_to_speed_entity(entity_id)
-            await hass.services.async_call(
-                "number",
-                "set_value",
-                {"entity_id": speed_entity_id, "value": 0},
                 blocking=True,
             )
 
@@ -227,20 +215,6 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_APPLY_SCENE,
         handle_apply_scene,
         schema=SERVICE_APPLY_SCENE_SCHEMA,
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_START_ANIMATION,
-        handle_start_animation,
-        schema=SERVICE_START_ANIMATION_SCHEMA,
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_STOP_ANIMATION,
-        handle_stop_animation,
-        schema=SERVICE_STOP_ANIMATION_SCHEMA,
     )
 
     hass.services.async_register(

@@ -168,27 +168,59 @@ We don't have a dedicated Lovelace card yet, but we'd love one! A custom card co
 
 The select entity exposes useful attributes:
 
-| Attribute           | Description                                          |
-| ------------------- | ---------------------------------------------------- |
-| `light_entities`    | List of configured light entity IDs                  |
-| `light_count`       | Number of configured lights                          |
-| `applied_colors`    | Dict of entity_id → RGB color                        |
-| `extracted_palette` | Full color palette from the image (list of RGB)      |
-| `palette_count`     | Number of colors in extracted palette                |
-| `last_scene_change` | ISO timestamp of last scene change (for automations) |
-| `is_animating`      | Whether animation is currently running               |
-| `last_error`        | Error message if last operation failed               |
-| `failed_lights`     | Dict of failed lights with error messages            |
+| Attribute              | Description                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `light_entities`       | List of configured light entity IDs                                                                                                                    |
+| `light_count`          | Number of configured lights                                                                                                                            |
+| `applied_colors`       | Dict of entity_id → RGB color (populated for static scenes; empty during animation)                                                                    |
+| `extracted_palette`    | Raw output from ColorThief — a list of `[R, G, B]` triples representing the most prominent colors in the image, ordered by dominance (most common first). Use `extracted_palette \| length` for the count. |
+| `dominant_color`       | First (most-dominant) palette entry as `[R, G, B]`. Single representative color for the scene.                                                         |
+| `dominant_color_hex`   | Same color in `#RRGGBB` form — drop directly into `background:` styles in cards.                                                                       |
+| `dominant_hue`         | Hue of the dominant color, 0–360°. Useful for "warm vs cool" template branches (warm ≈ 0–60 + 300–360, cool ≈ 180–270).                                |
+| `dominant_saturation`  | Saturation of the dominant color, 0–1. Vivid vs muted (>0.6 vivid, <0.3 washed-out).                                                                   |
+| `dominant_value`       | Value (brightness) of the dominant color, 0–1. Bright vs dark scene.                                                                                   |
+| `last_scene_change`    | ISO timestamp of last scene change (for automation triggers)                                                                                           |
+| `is_animating`         | Whether animation is currently running                                                                                                                 |
+| `last_error`           | Error message if last operation failed (cleared on success)                                                                                            |
+| `failed_lights`        | Dict of failed lights with error messages                                                                                                              |
 
-### Services
+### Service Actions
+
+Two integration-specific actions are registered: `chameleon.apply_scene` and `chameleon.refresh_scenes`. Direct slider control (brightness, animation speed) and direct mode switching go through the standard HA actions (`number.set_value`, `select.select_option`).
 
 ```yaml
-# Apply a scene programmatically
-service: select.select_option
+# Apply a scene programmatically (simplest form — uses current brightness/speed)
+action: chameleon.apply_scene
 target:
   entity_id: select.bedroom_lamp_scene
 data:
-  option: "Sunset Vibes"
+  scene_name: "Sunset Vibes"
+```
+
+```yaml
+# Apply a scene with brightness and speed bundled atomically.
+# Use speed > 0 to ensure animation runs; speed = 0 to apply statically.
+action: chameleon.apply_scene
+target:
+  entity_id: select.bedroom_lamp_scene
+data:
+  scene_name: "Movie Night"
+  brightness: 30
+  speed: 0
+```
+
+```yaml
+# Drive the sliders directly with stock HA actions
+action: number.set_value
+target:
+  entity_id: number.bedroom_lamp_brightness
+data:
+  value: 50
+```
+
+```yaml
+# Re-scan the image directory after dropping new files in /config/www/chameleon/
+action: chameleon.refresh_scenes
 ```
 
 ## Multi-Light Setup
@@ -303,7 +335,7 @@ Are you a developer? Continue reading for architecture details, error handling s
 The `light_controller.py` module contains all light control logic shared between:
 
 - Select entity (`select.py`)
-- Services (future: `apply_scene`, `start_animation`, `stop_animation`)
+- Service handlers (`chameleon.apply_scene`, `chameleon.refresh_scenes`)
 
 This separation ensures consistent behavior and error handling across all light control operations.
 

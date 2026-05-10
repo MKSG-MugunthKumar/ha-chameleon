@@ -1,6 +1,10 @@
 apply_scene:
   name: Apply Scene
-  description: Apply colors from an image scene to a Chameleon configuration
+  description: >-
+    Apply a scene to one or more Chameleon configurations. Optionally set
+    brightness and animation speed in the same call so the scene renders at
+    the requested values directly. To start animation set speed > 0; to stop
+    it set speed = 0 (also expressible as a plain number.set_value call).
   target:
     entity:
       domain: select
@@ -12,31 +16,26 @@ apply_scene:
       required: true
       selector:
         text: {}
-
-start_animation:
-  name: Start Animation
-  description: >-
-    Ensure animation is enabled (sets speed above zero if currently zero)
-    and apply a scene
-  target:
-    entity:
-      domain: select
-      integration: chameleon
-  fields:
-    scene_name:
-      name: Scene Name
-      description: Name of the scene (image) to use for animation
-      required: true
+    brightness:
+      name: Brightness
+      description: Optional brightness 0-100 (0 = lights off)
+      required: false
       selector:
-        text: {}
-
-stop_animation:
-  name: Stop Animation
-  description: Stop color animation by setting animation speed to 0
-  target:
-    entity:
-      domain: select
-      integration: chameleon
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    speed:
+      name: Animation Speed
+      description: Optional animation speed in seconds (0 = static, no animation)
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.1
+          unit_of_measurement: "s"
 
 refresh_scenes:
   name: Refresh Scenes

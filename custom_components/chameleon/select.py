@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import colorsys
 import logging
 import random
 from datetime import datetime
@@ -225,7 +226,19 @@ class ChameleonSceneSelect(SelectEntity):
 
         if self._extracted_palette:
             attrs["extracted_palette"] = [list(c) for c in self._extracted_palette]
-            attrs["palette_count"] = len(self._extracted_palette)
+            # ColorThief returns the palette in dominance order, so the first
+            # entry is the most-prominent color of the image — useful as a
+            # single representative tint for cards and templates.
+            r, g, b = self._extracted_palette[0]
+            attrs["dominant_color"] = [r, g, b]
+            attrs["dominant_color_hex"] = f"#{r:02x}{g:02x}{b:02x}"
+            # HSV decomposition for template-based "warm vs cool" / "vivid vs
+            # muted" / "bright vs dark" branching. Hue is in degrees (0-360);
+            # saturation and value are 0-1.
+            h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+            attrs["dominant_hue"] = round(h * 360, 1)
+            attrs["dominant_saturation"] = round(s, 2)
+            attrs["dominant_value"] = round(v, 2)
 
         if self._last_scene_change:
             attrs["last_scene_change"] = self._last_scene_change.isoformat()

@@ -25,8 +25,6 @@ PLATFORMS: Final = ["select", "number"]
 
 # Services
 SERVICE_APPLY_SCENE: Final = "apply_scene"
-SERVICE_START_ANIMATION: Final = "start_animation"
-SERVICE_STOP_ANIMATION: Final = "stop_animation"
 SERVICE_REFRESH_SCENES: Final = "refresh_scenes"
 
 # Attributes
