@@ -19,3 +19,16 @@ When working on this project:
 - Use `light_controller.py` for all light control operations
 - Track errors in entity attributes for UI visibility
 - Add comprehensive docstrings
+- Use ASCII `-` in comments, not en-dash `–`; ruff `RUF003` will fail the build
+- Prefer `light.turn_off` over `light.turn_on(brightness=0)` — the latter behaves inconsistently across HA versions
+
+## Verification
+
+- Run `make check` before commit (lint + format + type). `make lint-fix` auto-applies ruff fixes.
+- Tests need a C compiler locally (`pytest-homeassistant-custom-component` → `lru-dict` builds via gcc). CI runs them; locally they may fail to install.
+
+## Architectural Patterns
+
+- **Inter-entity coordination**: subordinate entities (number, mode select) register themselves at `hass.data[DOMAIN][entry_id][<key>]` so siblings in other platforms can call back. The scene select exposes `async_reapply_current_scene()` for sliders that cross zero-boundaries.
+- **Removing entities in a release**: list their old `unique_id`s in the orphan set inside `async_migrate_entry` and bump `VERSION` in `config_flow.py`. Match by `unique_id` (stable across user renames), not `entity_id`.
+- **No custom Lovelace card**: all UX must work through stock HA cards + standard service actions. Don't propose a custom-card path.
