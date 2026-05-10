@@ -1,8 +1,13 @@
 """Animation loop and color cycling for Chameleon integration.
 
 A single :class:`AnimationController` handles both synchronized and staggered
-modes — staggered just inserts a per-light random pre-tick delay. Speed,
-brightness, and mode can be updated live without restarting the controller.
+modes. The animation runs as one continuous fade: each color tick is sent
+with ``transition = speed`` so the light is always mid-fade between colors,
+producing smooth gradient flow with no discontinuous jumps.
+
+Staggered mode applies a one-time random phase offset at the start of each
+light's loop so members of a group desync from each other; subsequent ticks
+run at the same ``speed`` cadence with that offset preserved.
 
 Speed of 0 disables animation entirely; the caller (number entity) is expected
 to stop the controller before setting speed=0, so the loop is defensive but
@@ -19,11 +24,7 @@ from typing import TYPE_CHECKING
 from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATTR_TRANSITION
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_ON
 
-from .const import (
-    ANIMATION_MODE_SYNC,
-    DEFAULT_ANIMATION_MODE,
-    DEFAULT_TRANSITION_TIME,
-)
+from .const import ANIMATION_MODE_SYNC, DEFAULT_ANIMATION_MODE
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -44,7 +45,6 @@ class AnimationController:
         speed: float,
         mode: str = DEFAULT_ANIMATION_MODE,
         brightness: int | None = None,
-        transition: float = DEFAULT_TRANSITION_TIME,
     ) -> None:
         """Initialize the animation controller.
 
@@ -52,10 +52,11 @@ class AnimationController:
             hass: Home Assistant instance.
             light_entities: Light entity IDs to animate as a group.
             colors: Gradient colors to cycle through.
-            speed: Seconds per color tick. Must be > 0 to start.
+            speed: Seconds per color tick. Also used as the fade duration so
+                the light is continuously transitioning between colors.
+                Must be > 0 to start.
             mode: ``ANIMATION_MODE_SYNC`` or ``ANIMATION_MODE_STAGGERED``.
             brightness: Brightness percentage (0-100), converted to 0-255 for HA.
-            transition: Light service transition seconds.
         """
         self.hass = hass
         self.light_entities = list(light_entities)
@@ -63,7 +64,6 @@ class AnimationController:
         self.speed = max(0.0, float(speed))
         self.mode = mode
         self.brightness = brightness
-        self.transition = transition
 
         self._running = False
         self._tasks: list[asyncio.Task] = []
@@ -137,11 +137,21 @@ class AnimationController:
     async def _light_loop(self, light_index: int, light_entity: str) -> None:
         """Animation loop for a single light.
 
-        Sync mode: zero pre-tick delay, all lights advance roughly in lockstep.
-        Staggered mode: each light waits a random fraction of `speed` before
-        applying its color, producing an organic non-uniform effect.
+        In staggered mode each light waits a one-time random phase offset
+        before its first tick; from then on it runs at ``speed`` cadence with
+        that offset preserved relative to the other lights' tasks.
+
+        Each tick sends ``turn_on(transition=speed)`` so the light fades
+        continuously into the next color. The ``asyncio.sleep(speed)`` after
+        each apply waits for the fade to complete before issuing the next
+        target color.
         """
         color_index = self._initial_offsets[light_index]
+
+        # One-time phase offset for staggered mode. After this each light's
+        # cycle runs at exactly `speed` cadence but offset from its peers.
+        if not self.synchronized and self.speed > 0:
+            await asyncio.sleep(random.uniform(0, self.speed))
 
         while self._running:
             try:
@@ -152,20 +162,12 @@ class AnimationController:
                     await asyncio.sleep(1)
                     continue
 
-                delay = 0.0 if self.synchronized else random.uniform(0, speed)
-                if delay > 0:
-                    await asyncio.sleep(delay)
-
-                if not self._running:
-                    break
-
                 color = self.colors[color_index % len(self.colors)]
-                await self._apply_color(light_entity, color)
+                await self._apply_color(light_entity, color, transition=speed)
                 color_index = (color_index + 1) % len(self.colors)
 
-                remaining = max(0.0, speed - delay)
-                if remaining > 0:
-                    await asyncio.sleep(remaining)
+                # Wait for the fade to complete before targeting the next color.
+                await asyncio.sleep(speed)
 
             except asyncio.CancelledError:
                 break
@@ -173,12 +175,12 @@ class AnimationController:
                 _LOGGER.error("Animation error for %s: %s", light_entity, e)
                 await asyncio.sleep(1)
 
-    async def _apply_color(self, light_entity: str, color: RGBColor) -> None:
-        """Send a turn_on with the given color (and current brightness)."""
+    async def _apply_color(self, light_entity: str, color: RGBColor, transition: float) -> None:
+        """Send a turn_on with the given color, brightness, and fade duration."""
         service_data: dict[str, object] = {
             ATTR_ENTITY_ID: light_entity,
             ATTR_RGB_COLOR: list(color),
-            ATTR_TRANSITION: self.transition,
+            ATTR_TRANSITION: transition,
         }
 
         # brightness=0 means lights should be off; the controller shouldn't
@@ -220,7 +222,6 @@ class AnimationManager:
         speed: float,
         mode: str = DEFAULT_ANIMATION_MODE,
         brightness: int | None = None,
-        transition: float = DEFAULT_TRANSITION_TIME,
     ) -> None:
         """Start (or replace) the animation for a config entry."""
         await self.stop(entry_id)
@@ -232,7 +233,6 @@ class AnimationManager:
             speed,
             mode=mode,
             brightness=brightness,
-            transition=transition,
         )
         self._controllers[entry_id] = controller
         await controller.start()
