@@ -23,9 +23,6 @@
   },
   "entity": {
     "select": {
-      "scene": {
-        "name": "Scene"
-      },
       "animation_mode": {
         "name": "Animation Mode",
         "state": {
@@ -35,9 +32,6 @@
       }
     },
     "number": {
-      "brightness": {
-        "name": "Brightness"
-      },
       "animation_speed": {
         "name": "Animation Speed"
       }

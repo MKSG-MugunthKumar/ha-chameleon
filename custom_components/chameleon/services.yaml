@@ -1,13 +1,13 @@
 apply_scene:
   name: Apply Scene
   description: >-
-    Apply a scene to one or more Chameleon configurations. Optionally set
+    Apply a scene to one or more Chameleon light entities. Optionally set
     brightness and animation speed in the same call so the scene renders at
     the requested values directly. To start animation set speed > 0; to stop
     it set speed = 0 (also expressible as a plain number.set_value call).
   target:
     entity:
-      domain: select
+      domain: light
       integration: chameleon
   fields:
     scene_name:

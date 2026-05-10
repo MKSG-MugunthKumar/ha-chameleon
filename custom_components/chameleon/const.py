@@ -20,8 +20,10 @@ CONF_LIGHT_ENTITY: Final = "light_entity"  # Deprecated, kept for migration
 CONF_LIGHT_ENTITIES: Final = "light_entities"  # New: list of light entities
 CONF_ANIMATION_SPEED: Final = "animation_speed"
 
-# Platforms (no `switch` — animation on/off is now speed=0; mode is a select)
-PLATFORMS: Final = ["select", "number"]
+# Platforms. Light is the primary entity; select hosts the animation mode picker;
+# number hosts the animation speed slider. No switch (animation on/off is speed=0)
+# and no scene select (scenes are exposed as the light's effects).
+PLATFORMS: Final = ["light", "select", "number"]
 
 # Services
 SERVICE_APPLY_SCENE: Final = "apply_scene"

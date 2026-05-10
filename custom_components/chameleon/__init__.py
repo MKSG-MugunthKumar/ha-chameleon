@@ -70,35 +70,54 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v2 → v3: removes the ``ChameleonAnimationSwitch`` / ``ChameleonSyncAnimationSwitch``
              entities (animation on/off is now ``animation_speed > 0``; sync vs
              staggered is now an animation_mode select). Strips the unused
-             ``animation_enabled`` key from entry.data.
+             ``animation_enabled`` key from entry.data. Also removes the
+             ``ChameleonRefreshButton`` (replaced by the chameleon.refresh_scenes
+             service action).
+    v3 → v4: collapses the scene select and brightness number into a single light
+             entity that exposes scenes via ``LightEntityFeature.EFFECT`` and
+             owns brightness natively.
     """
+    target_version = 4
     _LOGGER.info(
         "Migrating Chameleon config entry %s from v%d to v%d",
         entry.entry_id,
         entry.version,
-        3,
+        target_version,
     )
+
+    entity_registry = er.async_get(hass)
 
     if entry.version < 3:
         # Remove orphan v2 entities so users don't see "no longer provided"
         # entries in the integrations page:
-        #   - the two animation/sync_animation switches (collapsed into speed=0
-        #     and the new animation_mode select)
-        #   - the refresh-scenes button (replaced by the chameleon.refresh_scenes
-        #     service action)
-        orphan_unique_ids = {
+        #   - the two animation/sync_animation switches
+        #   - the refresh-scenes button (replaced by chameleon.refresh_scenes service)
+        v2_orphans = {
             f"{DOMAIN}_{entry.entry_id}_animation",
             f"{DOMAIN}_{entry.entry_id}_sync_animation",
             f"{DOMAIN}_{entry.entry_id}_refresh",
         }
-        entity_registry = er.async_get(hass)
         for ent in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
-            if ent.unique_id in orphan_unique_ids:
+            if ent.unique_id in v2_orphans:
                 _LOGGER.info("Removing orphan v2 entity: %s", ent.entity_id)
                 entity_registry.async_remove(ent.entity_id)
 
         new_data = {k: v for k, v in entry.data.items() if k != "animation_enabled"}
         hass.config_entries.async_update_entry(entry, data=new_data, version=3)
+
+    if entry.version < 4:
+        # Remove orphan v3 entities — scene select and brightness number are now
+        # covered by the light entity's effect dropdown and native brightness.
+        v3_orphans = {
+            f"{DOMAIN}_{entry.entry_id}_scene",
+            f"{DOMAIN}_{entry.entry_id}_brightness",
+        }
+        for ent in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+            if ent.unique_id in v3_orphans:
+                _LOGGER.info("Removing orphan v3 entity: %s", ent.entity_id)
+                entity_registry.async_remove(ent.entity_id)
+
+        hass.config_entries.async_update_entry(entry, version=4)
 
     return True
 
@@ -119,13 +138,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ChameleonConfigEntry) -
     return unload_ok
 
 
-def _scene_entity_sibling(scene_entity_id: str, sibling_suffix: str, domain: str = "number") -> str:
-    """Derive a sibling entity ID from a Chameleon scene select entity ID.
+def _light_entity_sibling(light_entity_id: str, sibling_suffix: str, domain: str = "number") -> str:
+    """Derive a sibling entity ID from a Chameleon light entity ID.
 
-    ``select.chameleon_living_room_scene`` + ``"animation_speed"`` →
+    ``light.chameleon_living_room`` + ``"animation_speed"`` →
     ``number.chameleon_living_room_animation_speed``.
     """
-    base = scene_entity_id.removeprefix("select.").removesuffix("_scene")
+    base = light_entity_id.removeprefix("light.")
     return f"{domain}.{base}_{sibling_suffix}"
 
 
@@ -134,67 +153,63 @@ async def _async_register_services(hass: HomeAssistant) -> None:
 
     Two services:
 
-    - ``apply_scene``: targets the scene select entity. Optionally accepts
-      ``brightness`` and ``speed`` to set those sliders before the scene is
-      applied — covers the old ``start_animation`` / ``stop_animation`` cases
-      (pass ``speed > 0`` to start, ``speed = 0`` to stop) without separate
-      services.
+    - ``apply_scene``: targets the Chameleon light entity. Optionally accepts
+      ``brightness`` and ``speed`` to set those values atomically with the
+      scene change. To start animation pass ``speed > 0``; to stop it pass
+      ``speed = 0`` (also expressible as a plain number.set_value call).
     - ``refresh_scenes``: rescans the image directory for every Chameleon
       config. No target needed.
 
-    Direct slider control still goes through ``number.set_value`` per HA
-    convention — we don't wrap it.
+    Direct slider control (animation speed, animation mode) still goes through
+    the standard ``number.set_value`` / ``select.select_option`` services per
+    HA convention — we don't wrap those.
     """
 
     async def handle_apply_scene(call: ServiceCall) -> None:
         """Apply a scene, optionally setting brightness and/or speed first.
 
-        ``brightness`` and ``speed`` are optional; if omitted, the existing slider
-        values are kept. When supplied, the sliders are set *before* the scene is
-        applied so the new scene is rendered at the requested values directly
-        (rather than at the old values then bumped).
+        ``brightness`` and ``speed`` are optional; if omitted, the existing values
+        are preserved. Brightness flows directly into ``light.turn_on``;
+        speed must be set on the sibling number entity first because the light
+        entity doesn't own the animation tick rate.
         """
         entity_ids: list[str] = call.data.get("entity_id", [])
         scene_name: str = call.data[ATTR_SCENE_NAME]
-        brightness = call.data.get("brightness")
+        brightness = call.data.get("brightness")  # 0-100 in Chameleon scale
         speed = call.data.get("speed")
 
         for entity_id in entity_ids:
-            if not entity_id.startswith("select.chameleon_"):
-                _LOGGER.warning("Skipping %s: not a Chameleon select entity", entity_id)
+            if not entity_id.startswith("light.chameleon_"):
+                _LOGGER.warning("Skipping %s: not a Chameleon light entity", entity_id)
                 continue
 
-            if brightness is not None:
-                await hass.services.async_call(
-                    "number",
-                    "set_value",
-                    {
-                        "entity_id": _scene_entity_sibling(entity_id, "brightness"),
-                        "value": brightness,
-                    },
-                    blocking=True,
-                )
-
+            # Speed lives on a sibling number entity — set it before the scene
+            # is applied so the light's _apply_effect reads the new value.
             if speed is not None:
                 await hass.services.async_call(
                     "number",
                     "set_value",
                     {
-                        "entity_id": _scene_entity_sibling(entity_id, "animation_speed"),
+                        "entity_id": _light_entity_sibling(entity_id, "animation_speed"),
                         "value": speed,
                     },
                     blocking=True,
                 )
 
+            # Brightness flows directly into the light's turn_on call (HA's 0-255 scale).
+            turn_on_data: dict = {"entity_id": entity_id, "effect": scene_name}
+            if brightness is not None:
+                turn_on_data["brightness"] = int(brightness * 255 / 100)
+
             await hass.services.async_call(
-                "select",
-                "select_option",
-                {"entity_id": entity_id, "option": scene_name},
+                "light",
+                "turn_on",
+                turn_on_data,
                 blocking=True,
             )
 
     async def handle_refresh_scenes(_call: ServiceCall) -> None:
-        """Rescan the image directory and update every Chameleon scene select.
+        """Rescan the image directory and update every Chameleon light entity.
 
         All Chameleon configs share /config/www/chameleon/, so this refreshes
         every entity in one go — no per-entity targeting needed.
@@ -204,9 +219,9 @@ async def _async_register_services(hass: HomeAssistant) -> None:
         for key, entry_data in domain_data.items():
             if key == "animation_manager" or not isinstance(entry_data, dict):
                 continue
-            scene_select = entry_data.get("scene_select")
-            if scene_select is not None:
-                await scene_select.async_refresh_options()
+            chameleon_light = entry_data.get("chameleon_light")
+            if chameleon_light is not None:
+                await chameleon_light.async_refresh_options()
                 refreshed += 1
         _LOGGER.info("Refreshed scene list for %d Chameleon config(s)", refreshed)
 

@@ -28,7 +28,7 @@ from .helpers import get_entry_title
 class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Chameleon."""
 
-    VERSION = 3  # v3 drops the animation/sync_animation switches in favor of speed=0 + mode select
+    VERSION = 4  # v4 collapses scene select + brightness number into a single light entity with EFFECT support
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""

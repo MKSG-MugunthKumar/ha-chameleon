@@ -98,75 +98,67 @@ Use the select entity in:
 
 ### Example Dashboard Card
 
-Add this to your Lovelace dashboard to create a control panel for Chameleon:
+Chameleon exposes a single **light entity** (`light.chameleon_*`) that drops into any standard HA light card — Tile, Mushroom Light, Bubble Card, etc. The light's effect dropdown is the scene picker, brightness is native, and the color preview reflects the active scene's dominant color.
 
 ```yaml
-type: vertical-stack
-cards:
-  - type: entities
-    title: Chameleon
-    entities:
-      - entity: select.bedroom_lamp_scene
-        name: Scene
-      - entity: number.bedroom_lamp_brightness
-        name: Brightness
-      - entity: number.bedroom_lamp_animation_speed
-        name: Animation Speed
-      - entity: select.bedroom_lamp_animation_mode
-        name: Animation Mode
-    show_header_toggle: false
+type: tile
+entity: light.chameleon_bedroom_lamp
 ```
 
-**Complete Control Card** (recommended):
+**Complete control card** (light + companions for animation speed and mode):
 
 ```yaml
 type: vertical-stack
 cards:
-  - type: custom:mushroom-title-card
-    title: "🎨 Chameleon"
-    subtitle: Ambient lighting from images
+  - type: tile
+    entity: light.chameleon_bedroom_lamp
+    features:
+      - type: light-brightness
+      - type: light-color-temp # optional — RGB color picker also works
   - type: entities
     entities:
-      - entity: select.bedroom_lamp_scene
-        name: Scene
-        icon: mdi:palette
-      - entity: number.bedroom_lamp_brightness
-        name: Brightness
-      - entity: number.bedroom_lamp_animation_speed
-        name: Speed
-      - entity: select.bedroom_lamp_animation_mode
+      - entity: number.chameleon_bedroom_lamp_animation_speed
+        name: Speed (0 = static)
+      - entity: select.chameleon_bedroom_lamp_animation_mode
         name: Mode
-    state_color: true
+```
+
+**Mushroom Light Card example** (a popular custom card that handles effects beautifully):
+
+```yaml
+type: custom:mushroom-light-card
+entity: light.chameleon_bedroom_lamp
+show_brightness_control: true
+show_color_control: true
+collapsible_controls: true
 ```
 
 > **Note**: Replace `bedroom_lamp` with your light's base name. Entity IDs follow the pattern:
 >
-> - `select.{light_name}_scene` - Scene selection (includes Off, Random, and image scenes)
-> - `number.{light_name}_brightness` - Brightness control (**0** = off, 100 = full)
-> - `number.{light_name}_animation_speed` - Animation speed in seconds (**0** = static, no animation)
-> - `select.{light_name}_animation_mode` - Animation mode: `synchronized` or `staggered`
+> - `light.chameleon_{light_name}` — primary entity. Brightness, color preview, and effect dropdown (the scene list) live here.
+> - `number.chameleon_{light_name}_animation_speed` — seconds per color tick. **0** = static (no animation). Speed > 0 enables continuous fades between scene colors.
+> - `select.chameleon_{light_name}_animation_mode` — `synchronized` (all lights change together) or `staggered` (each light independently with random phase offsets).
 >
 > After adding or removing image files in `/config/www/chameleon/`, refresh the scene list with the **`chameleon.refresh_scenes`** action (Developer Tools → Actions, or call from an automation). The list is also refreshed automatically when the integration is reloaded (Settings → Devices & Services → Chameleon → ⋯ → Reload).
 >
-> Setting **brightness to 0** is equivalent to selecting the "Off" scene — lights turn off and the previous brightness is restored when the slider goes back above zero.
->
-> Setting **animation speed to 0** disables animation — the scene is applied as a static color (or palette across multiple lights). There is no separate animation on/off switch.
+> **Manual color override**: picking a color via the card's color picker bypasses the scene system and applies that color directly to all underlying lights. Picking a scene from the effect dropdown clears the override.
 
 ### State Attributes
 
-The select entity exposes useful attributes:
+The light entity exposes useful attributes for templates and dashboards:
 
 | Attribute             | Description                                                                                                                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `light_entities`      | List of configured light entity IDs                                                                                                                                                                        |
+| `light_entities`      | List of configured underlying light entity IDs                                                                                                                                                             |
 | `light_count`         | Number of configured lights                                                                                                                                                                                |
-| `applied_colors`      | Dict of entity_id → RGB color (populated for static scenes; empty during animation)                                                                                                                        |
+| `applied_colors`      | Dict of entity_id → RGB color (populated for static scenes and manual color picks; empty during animation)                                                                                                 |
 | `extracted_palette`   | Raw output from ColorThief — a list of `[R, G, B]` triples representing the most prominent colors in the image, ordered by dominance (most common first). Use `extracted_palette \| length` for the count. |
 | `dominant_color`      | First (most-dominant) palette entry as `[R, G, B]`. Single representative color for the scene.                                                                                                             |
 | `dominant_color_hex`  | Same color in `#RRGGBB` form — drop directly into `background:` styles in cards.                                                                                                                           |
 | `dominant_hue`        | Hue of the dominant color, 0–360°. Useful for "warm vs cool" template branches (warm ≈ 0–60 + 300–360, cool ≈ 180–270).                                                                                    |
 | `dominant_saturation` | Saturation of the dominant color, 0–1. Vivid vs muted (>0.6 vivid, <0.3 washed-out).                                                                                                                       |
 | `dominant_value`      | Value (brightness) of the dominant color, 0–1. Bright vs dark scene.                                                                                                                                       |
+| `manual_color`        | `[R, G, B]` of the user-picked color when in manual-color mode. Absent when an effect is active.                                                                                                           |
 | `last_scene_change`   | ISO timestamp of last scene change (for automation triggers)                                                                                                                                               |
 | `is_animating`        | Whether animation is currently running                                                                                                                                                                     |
 | `last_error`          | Error message if last operation failed (cleared on success)                                                                                                                                                |
@@ -174,13 +166,13 @@ The select entity exposes useful attributes:
 
 ### Service Actions
 
-Two integration-specific actions are registered: `chameleon.apply_scene` and `chameleon.refresh_scenes`. Direct slider control (brightness, animation speed) and direct mode switching go through the standard HA actions (`number.set_value`, `select.select_option`).
+Two integration-specific actions: `chameleon.apply_scene` and `chameleon.refresh_scenes`. For everything else, use stock HA actions (`light.turn_on`, `number.set_value`, `select.select_option`) directly on the Chameleon entities.
 
 ```yaml
-# Apply a scene programmatically (simplest form — uses current brightness/speed)
+# Apply a scene programmatically (uses current brightness and speed)
 action: chameleon.apply_scene
 target:
-  entity_id: select.bedroom_lamp_scene
+  entity_id: light.chameleon_bedroom_lamp
 data:
   scene_name: "Sunset Vibes"
 ```
@@ -190,7 +182,7 @@ data:
 # Use speed > 0 to ensure animation runs; speed = 0 to apply statically.
 action: chameleon.apply_scene
 target:
-  entity_id: select.bedroom_lamp_scene
+  entity_id: light.chameleon_bedroom_lamp
 data:
   scene_name: "Movie Night"
   brightness: 30
@@ -198,12 +190,31 @@ data:
 ```
 
 ```yaml
-# Drive the sliders directly with stock HA actions
+# Equivalently with stock light.turn_on (light entity has native effect support)
+action: light.turn_on
+target:
+  entity_id: light.chameleon_bedroom_lamp
+data:
+  effect: "Sunset Vibes"
+  brightness: 200
+```
+
+```yaml
+# Pick a manual color (bypasses scenes; applies directly to underlying lights)
+action: light.turn_on
+target:
+  entity_id: light.chameleon_bedroom_lamp
+data:
+  rgb_color: [255, 100, 50]
+```
+
+```yaml
+# Drive the animation speed slider with stock HA action
 action: number.set_value
 target:
-  entity_id: number.bedroom_lamp_brightness
+  entity_id: number.chameleon_bedroom_lamp_animation_speed
 data:
-  value: 50
+  value: 2.5
 ```
 
 ```yaml
@@ -308,22 +319,23 @@ Are you a developer? Continue reading for architecture details, error handling s
 
 ### Module Responsibilities
 
-| Module                | Responsibility                                                |
-| --------------------- | ------------------------------------------------------------- |
-| `__init__.py`         | Integration entry point, setup/unload, services               |
-| `config_flow.py`      | UI configuration flow                                         |
-| `const.py`            | All constants and configuration keys                          |
-| `select.py`           | Scene select + animation mode select                          |
-| `number.py`           | Brightness and animation speed sliders (with zero-value off)  |
-| `light_controller.py` | Shared light control logic (availability, color application)  |
-| `color_extractor.py`  | Color extraction from images                                  |
-| `animations.py`       | Single AnimationController + AnimationManager (one per entry) |
+| Module                | Responsibility                                                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `__init__.py`         | Integration entry point, setup/unload, services, config-entry migration                                                      |
+| `config_flow.py`      | UI configuration flow                                                                                                        |
+| `const.py`            | All constants and configuration keys                                                                                         |
+| `light.py`            | Primary entity — scene/effect picker, brightness, on/off, manual color override, palette extraction, animation orchestration |
+| `select.py`           | Animation mode select (synchronized vs staggered)                                                                            |
+| `number.py`           | Animation speed slider (with zero-value = static mode)                                                                       |
+| `light_controller.py` | Shared light control logic (availability, color application)                                                                 |
+| `color_extractor.py`  | Color extraction from images                                                                                                 |
+| `animations.py`       | Single AnimationController + AnimationManager (one per entry); transition = speed for smooth fades                           |
 
 ### Key Design Pattern: Separation of Concerns
 
 The `light_controller.py` module contains all light control logic shared between:
 
-- Select entity (`select.py`)
+- The Chameleon light entity (`light.py`)
 - Service handlers (`chameleon.apply_scene`, `chameleon.refresh_scenes`)
 
 This separation ensures consistent behavior and error handling across all light control operations.
@@ -445,16 +457,17 @@ Quick start:
 
 ### Minor Tweaks
 
-- [x] **Off option** - "Off" scene turns off all lights
+- [x] **Native light entity** - `light.chameleon_*` is the primary entity. Scenes are exposed as HA effects via `LightEntityFeature.EFFECT`; brightness and on/off are native; manual color picks bypass scenes and apply directly. Drops into stock Tile/Mushroom/Bubble cards as a single first-class light.
+- [x] **Off via `turn_off`** - The light's `turn_off` replaces the previous "Off" scene. Bare `turn_on` after off restores the last applied scene (Random if none).
 - [x] **Animation speed entity** - Runtime-adjustable number entity (0–10s, 0 = static)
+- [x] **Smooth color fades** - Animation loop sends `transition = speed` so each color change fades over the full interval. No more snap-and-hold jumps.
 - [x] **Sync/staggered modes** - `select.{light}_animation_mode` lets each light cycle in lockstep or with organic random delays
-- [x] **Instant transitions** - Hardcoded 0.1s transition for snappy color changes
-- [x] **Random scene** - "Random" option picks a random scene from available images
+- [x] **Random scene** - Available as the `Random` effect; picks a random scene from available images
 - [x] **Dominant color attributes** - `dominant_color`, `dominant_color_hex`, plus HSV decomposition for template-driven dashboards and "warm vs cool" automations
 - [x] **Extracted palette** - Full color palette exposed in state attributes
 - [x] **Refresh scenes service** - `chameleon.refresh_scenes` rescans the image directory on demand (no polling)
 - [x] **Last scene timestamp** - For automation triggers
-- [x] **Semantic zero-values** - Brightness 0 = lights off (restores last non-zero on bump up); Speed 0 = static (no animation loop). Removes the need for separate on/off switches.
+- [x] **Semantic zero-value for speed** - Speed 0 = static (no animation loop). Removes the need for a separate on/off switch.
 
 ### Media Player Integration
 
