@@ -109,7 +109,6 @@ class ChameleonSceneSelect(SelectEntity):
         self._animation_speed = animation_speed
         self._current_option: str | None = None
         self._applied_colors: dict[str, RGBColor] = {}
-        self._is_animating = False
 
         self._extracted_palette: list[RGBColor] = []
         self._last_scene_change: datetime | None = None
@@ -167,11 +166,13 @@ class ChameleonSceneSelect(SelectEntity):
             entry_data.pop("scene_select", None)
 
     async def _stop_animations(self) -> None:
-        """Stop animation for this entry, if running."""
+        """Stop animation for this entry, if running.
+
+        ``manager.stop`` is idempotent — safe to call when nothing is running.
+        """
         manager = self._get_animation_manager()
-        if manager and self._is_animating:
+        if manager:
             await manager.stop(self._entry.entry_id)
-            self._is_animating = False
 
     async def async_refresh_options(self) -> None:
         """Refresh the cached options list by scanning the image directory.
@@ -217,11 +218,14 @@ class ChameleonSceneSelect(SelectEntity):
     @property
     def extra_state_attributes(self):
         """Return extra state attributes."""
+        # is_animating is derived from the animation manager — the single source
+        # of truth — to avoid mirror-state drift bugs.
+        manager = self._get_animation_manager()
         attrs = {
             "light_entities": self._light_entities,
             "light_count": len(self._light_entities),
             "applied_colors": self._applied_colors,
-            "is_animating": self._is_animating,
+            "is_animating": manager.is_running(self._entry.entry_id) if manager else False,
         }
 
         if self._extracted_palette:
@@ -445,7 +449,6 @@ class ChameleonSceneSelect(SelectEntity):
                 mode=mode,
                 brightness=brightness,
             )
-            self._is_animating = True
             _LOGGER.info(
                 "Started %s animation for %d lights (speed=%.1fs)",
                 mode,
