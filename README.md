@@ -153,17 +153,6 @@ cards:
 >
 > Setting **animation speed to 0** disables animation — the scene is applied as a static color (or palette across multiple lights). There is no separate animation on/off switch.
 
-### Custom Lovelace Card
-
-We don't have a dedicated Lovelace card yet, but we'd love one! A custom card could include:
-
-- Image thumbnail preview of the selected scene
-- Color palette visualization
-- Integrated brightness slider and animation toggle
-- Scene quick-select buttons
-
-**Interested in building it?** See the [Developer Guide](#chameleon-integration---developer-guide) and open an issue to discuss!
-
 ### State Attributes
 
 The select entity exposes useful attributes:
@@ -440,44 +429,6 @@ Chameleon currently supports **English only**. We'd love help translating to oth
 
 If you're fluent in another language and want to contribute translations, check out our [Contributing Guide](CONTRIBUTING.md#translations) for instructions.
 
-## Call for Developers: Custom Lovelace Card
-
-We're looking for frontend developers to build a dedicated **Chameleon Lovelace Card**!
-
-### Why a Custom Card?
-
-The built-in entities work great, but a dedicated card could provide:
-
-- **Image thumbnail preview** of the currently selected scene
-- **Color palette visualization** showing extracted colors
-- **Integrated controls** for scene, brightness, and animation in one card
-- **Scene quick-select** with image thumbnails instead of a dropdown
-
-### Technical Details
-
-The card would interact with these entities:
-
-| Entity                            | Type   | Purpose                                            |
-| --------------------------------- | ------ | -------------------------------------------------- |
-| `select.{light}_scene`            | Select | Scene selection                                    |
-| `number.{light}_brightness`       | Number | Brightness 0–100% (0 = off, restores last on bump) |
-| `number.{light}_animation_speed`  | Number | Seconds per color tick (0 = static / no animation) |
-| `select.{light}_animation_mode`   | Select | `synchronized` or `staggered`                      |
-
-State attributes available on the select entity:
-
-- `applied_colors` - Dict of light entity → RGB tuple
-- `light_entities` - List of controlled lights
-- `is_animating` - Boolean animation state
-
-Images are stored in `/config/www/chameleon/` (accessible via `/local/chameleon/`).
-
-### Interested?
-
-1. Open an issue to discuss your approach
-2. Check out [custom-cards/boilerplate-card](https://github.com/custom-cards/boilerplate-card) for a starting point
-3. We're happy to add any needed state attributes or features to support the card
-
 ## Contributing
 
 Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
@@ -505,11 +456,6 @@ Quick start:
 - [x] **Refresh scenes service** - `chameleon.refresh_scenes` rescans the image directory on demand (no polling)
 - [x] **Last scene timestamp** - For automation triggers
 - [x] **Semantic zero-values** - Brightness 0 = lights off (restores last non-zero on bump up); Speed 0 = static (no animation loop). Removes the need for separate on/off switches.
-
-### Custom Lovelace Card
-
-- [ ] **Custom Lovelace card** - Dedicated card with image preview and controls (see [call for developers](#call-for-developers-custom-lovelace-card))
-- [ ] **Customizable UI elements** - Allow users to modify card appearance and behavior
 
 ### Media Player Integration
 
