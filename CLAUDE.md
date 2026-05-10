@@ -29,6 +29,11 @@ When working on this project:
 
 ## Architectural Patterns
 
-- **Inter-entity coordination**: subordinate entities (number, mode select) register themselves at `hass.data[DOMAIN][entry_id][<key>]` so siblings in other platforms can call back. The scene select exposes `async_reapply_current_scene()` for sliders that cross zero-boundaries.
+- **Inter-entity coordination**: subordinate entities (number, transition-style select) register themselves at `hass.data[DOMAIN][entry_id][<key>]` so siblings in other platforms can call back. The Chameleon light exposes `async_reapply_current_scene()` for sliders that cross zero-boundaries.
 - **Removing entities in a release**: list their old `unique_id`s in the orphan set inside `async_migrate_entry` and bump `VERSION` in `config_flow.py`. Match by `unique_id` (stable across user renames), not `entity_id`.
+- **Renaming entities in a release**: use `entity_registry.async_update_entity(entity_id, new_unique_id=..., new_entity_id=...)` for in-place rename — preserves user customisations (custom name, icon, area). Different pattern from orphan-removal, which retires entirely.
+- **Concurrency on stateful entities**: HA dispatches service calls (turn_on/turn_off) concurrently onto the same entity. If the handler mutates shared state (animation manager, scene state), wrap with a per-entity `asyncio.Lock`. Without it, racing calls fail to "replace" each other.
+- **Cancel-safe service calls in loops**: prefer `blocking=True` in `hass.services.async_call` inside long-running tasks. `blocking=False` leaks queued calls past cancellation — visible as flicker after a `turn_off`.
+- **Instant `turn_off`**: pass `transition=0` to `light.turn_off`, otherwise the light inherits the previous `turn_on(transition=N)` fade duration and "fades to off" instead of going dark.
+- **Derive state, don't mirror it**: if a source of truth exists (e.g., `manager.is_running(entry_id)`), expose it as a derived property. Don't keep a parallel `_is_X` flag — mirrors drift, derived properties don't.
 - **No custom Lovelace card**: all UX must work through stock HA cards + standard service actions. Don't propose a custom-card path.
