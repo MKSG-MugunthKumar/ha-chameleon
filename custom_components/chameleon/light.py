@@ -22,6 +22,7 @@ Setters:
 
 from __future__ import annotations
 
+import asyncio
 import colorsys
 import logging
 import random
@@ -149,6 +150,12 @@ class ChameleonLight(LightEntity):
         self._cached_options: list[str] = []
         self._scene_to_path: dict[str, Path] = {}
 
+        # Serializes concurrent state-changing calls. HA can dispatch multiple
+        # service calls (turn_on, turn_off, sibling re-apply) onto this entity
+        # simultaneously; without the lock those interleave and race each other
+        # over the animation manager state.
+        self._lock = asyncio.Lock()
+
         self._light_controller = LightController(hass)
 
         base_name = get_entity_base_name(hass, light_entities)
@@ -269,6 +276,16 @@ class ChameleonLight(LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on with optional effect, rgb_color, and/or brightness."""
+        async with self._lock:
+            await self._do_turn_on(**kwargs)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Stop animation and turn off all underlying lights."""
+        async with self._lock:
+            await self._do_turn_off()
+
+    async def _do_turn_on(self, **kwargs: Any) -> None:
+        """Inner turn-on, runs under ``self._lock``."""
         self._last_error = None
         self._failed_lights = {}
 
@@ -276,49 +293,59 @@ class ChameleonLight(LightEntity):
         rgb_color = kwargs.get(ATTR_RGB_COLOR)
         effect = kwargs.get(ATTR_EFFECT)
 
-        # Brightness handling first so subsequent apply happens at the right level.
+        # brightness=0 from a card almost never happens (cards convert to
+        # turn_off) but handle defensively without re-acquiring the lock.
+        if brightness is not None and brightness == 0:
+            await self._do_turn_off()
+            return
+
+        # Update brightness if provided.
+        brightness_changed = False
         if brightness is not None:
-            if brightness == 0:
-                # HA cards usually convert this to turn_off; handle defensively.
-                await self.async_turn_off()
-                return
             new_pct = max(1, round(brightness * 100 / 255))
-            self._brightness_pct = new_pct
-            self._last_nonzero_brightness = new_pct
-            _entry_data(self.hass, self._entry.entry_id)["brightness"] = new_pct
+            if new_pct != self._brightness_pct:
+                brightness_changed = True
+                self._brightness_pct = new_pct
+                self._last_nonzero_brightness = new_pct
+                _entry_data(self.hass, self._entry.entry_id)["brightness"] = new_pct
 
         if effect is not None:
+            # Scene change — full re-apply.
             self._manual_color = None
             await self._apply_effect(effect)
         elif rgb_color is not None:
+            # Manual color override — full re-apply.
             await self._apply_manual_color(tuple(rgb_color))
         elif not self._is_on:
             # Bare turn_on from off → restore last effect (Random if never set).
             target = self._last_effect or SCENE_RANDOM
             self._manual_color = None
             await self._apply_effect(target)
-        else:
-            # Already on; this is a brightness-only update — re-apply current state.
-            if self._manual_color is not None:
-                await self._apply_manual_color(self._manual_color)
-            elif self._effect is not None:
-                await self._apply_effect(self._effect)
+        elif brightness_changed:
+            # Already on; brightness-only update. Push live to running animation
+            # if any, otherwise just bump brightness on the lights without
+            # re-extracting the palette.
+            await self._update_brightness_only()
+        # else: bare turn_on while already on with no change → no-op
 
         self._is_on = True
         self.async_write_ha_state()
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        """Stop animation and turn off all underlying lights."""
+    async def _do_turn_off(self) -> None:
+        """Inner turn-off, runs under ``self._lock``."""
         manager = self._get_animation_manager()
         if manager:
             await manager.stop(self._entry.entry_id)
 
+        # transition=0 → instant off, ignoring any trailing fade duration
+        # the lights might inherit from the just-cancelled animation's last
+        # turn_on with transition=speed.
         for light_entity in self._light_entities:
             try:
                 await self.hass.services.async_call(
                     "light",
                     "turn_off",
-                    {"entity_id": light_entity},
+                    {"entity_id": light_entity, "transition": 0},
                     blocking=True,
                 )
             except Exception as e:
@@ -331,20 +358,52 @@ class ChameleonLight(LightEntity):
         # _last_effect is preserved so a bare turn_on can restore it.
         self.async_write_ha_state()
 
+    async def _update_brightness_only(self) -> None:
+        """Apply a brightness change without disturbing color/scene state.
+
+        - Running animation: push live to the controller.
+        - Manual color: re-apply at the new brightness.
+        - Static scene: just bump brightness on the underlying lights; they
+          remember their color from the last static apply.
+        """
+        manager = self._get_animation_manager()
+        if manager and manager.is_running(self._entry.entry_id):
+            manager.update_brightness(self._entry.entry_id, self._brightness_pct)
+            return
+
+        if self._manual_color is not None:
+            await self._apply_manual_color(self._manual_color)
+            return
+
+        ha_brightness = int(self._brightness_pct * 255 / 100)
+        for light_entity in self._light_entities:
+            try:
+                await self.hass.services.async_call(
+                    "light",
+                    "turn_on",
+                    {"entity_id": light_entity, "brightness": ha_brightness},
+                    blocking=True,
+                )
+            except Exception as e:
+                _LOGGER.error("Failed to update brightness on %s: %s", light_entity, e)
+
     # ── Public API for sibling entities ──────────────────────────────────
 
     async def async_reapply_current_scene(self) -> None:
         """Re-run the current scene/color with current runtime state.
 
         Called by the speed slider when it crosses the zero boundary, or by
-        the mode select when its value changes mid-animation.
+        the mode select when its value changes mid-animation. Held under the
+        same lock as turn_on/turn_off so re-applies serialize with user
+        actions.
         """
-        if not self._is_on:
-            return
-        if self._manual_color is not None:
-            await self._apply_manual_color(self._manual_color)
-        elif self._effect is not None:
-            await self._apply_effect(self._effect)
+        async with self._lock:
+            if not self._is_on:
+                return
+            if self._manual_color is not None:
+                await self._apply_manual_color(self._manual_color)
+            elif self._effect is not None:
+                await self._apply_effect(self._effect)
 
     async def async_refresh_options(self) -> None:
         """Refresh the scene cache (effect_list source).

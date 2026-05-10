@@ -189,11 +189,14 @@ class AnimationController:
         if self.brightness is not None and self.brightness > 0:
             service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
 
+        # blocking=True so cancellation is clean: when manager.stop() cancels
+        # this task, no `turn_on` calls are left queued in HA to fire after a
+        # subsequent `turn_off` (which would visibly relight the lamps).
         await self.hass.services.async_call(
             "light",
             SERVICE_TURN_ON,
             service_data,
-            blocking=False,
+            blocking=True,
         )
 
 
