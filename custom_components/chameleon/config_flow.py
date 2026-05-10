@@ -15,12 +15,12 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
-    CONF_ANIMATION_SPEED,
     CONF_LIGHT_ENTITIES,
-    DEFAULT_ANIMATION_SPEED,
+    CONF_TRANSITION,
+    DEFAULT_TRANSITION,
     DOMAIN,
-    MAX_ANIMATION_SPEED,
-    MIN_ANIMATION_SPEED,
+    MAX_TRANSITION,
+    MIN_TRANSITION,
 )
 from .helpers import get_entry_title
 
@@ -47,7 +47,7 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
                 data=user_input,
             )
 
-        # Animation speed default; runtime control is via number.{light}_animation_speed
+        # Transition default; runtime control is via number.chameleon_{light}_transition
         # (set to 0 to disable animation entirely).
         data_schema = vol.Schema(
             {
@@ -57,10 +57,10 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
                         multiple=True,
                     )
                 ),
-                vol.Required(CONF_ANIMATION_SPEED, default=DEFAULT_ANIMATION_SPEED): NumberSelector(
+                vol.Required(CONF_TRANSITION, default=DEFAULT_TRANSITION): NumberSelector(
                     NumberSelectorConfig(
-                        min=MIN_ANIMATION_SPEED,
-                        max=MAX_ANIMATION_SPEED,
+                        min=MIN_TRANSITION,
+                        max=MAX_TRANSITION,
                         step=0.1,
                         unit_of_measurement="seconds",
                         mode=NumberSelectorMode.SLIDER,

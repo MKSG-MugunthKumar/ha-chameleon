@@ -1,7 +1,7 @@
-"""Select platform for Chameleon — animation mode picker.
+"""Select platform for Chameleon — transition style picker.
 
 The scene picker lives on the ``light`` platform (``effect``/``effect_list``);
-this file just hosts the synchronized-vs-staggered mode select.
+this file just hosts the synchronized-vs-staggered transition style select.
 """
 
 from __future__ import annotations
@@ -15,11 +15,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
-    ANIMATION_MODES,
     CONF_LIGHT_ENTITIES,
     CONF_LIGHT_ENTITY,
-    DEFAULT_ANIMATION_MODE,
+    DEFAULT_TRANSITION_STYLE,
     DOMAIN,
+    TRANSITION_STYLES,
 )
 from .helpers import get_chameleon_device_name, get_entity_base_name
 
@@ -34,14 +34,14 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Chameleon animation mode select from a config entry."""
+    """Set up the Chameleon transition style select from a config entry."""
     if CONF_LIGHT_ENTITIES in entry.data:
         light_entities = entry.data[CONF_LIGHT_ENTITIES]
     else:
         light_entities = [entry.data[CONF_LIGHT_ENTITY]]
 
     async_add_entities(
-        [ChameleonAnimationModeSelect(hass, entry, light_entities)],
+        [ChameleonTransitionStyleSelect(hass, entry, light_entities)],
         True,
     )
 
@@ -52,11 +52,11 @@ def _entry_data(hass: HomeAssistant, entry_id: str) -> dict:
     return domain_data.setdefault(entry_id, {})
 
 
-class ChameleonAnimationModeSelect(SelectEntity):
-    """Animation mode picker — synchronized vs staggered."""
+class ChameleonTransitionStyleSelect(SelectEntity):
+    """Transition style picker — synchronized vs staggered."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "animation_mode"
+    _attr_translation_key = "transition_style"
     _attr_icon = "mdi:animation"
 
     def __init__(
@@ -65,19 +65,19 @@ class ChameleonAnimationModeSelect(SelectEntity):
         entry: ConfigEntry,
         light_entities: list[str],
     ) -> None:
-        """Initialize the animation mode select."""
+        """Initialize the transition style select."""
         self.hass = hass
         self._entry = entry
         self._light_entities = light_entities
-        self._attr_options = list(ANIMATION_MODES)
-        self._current_option: str = DEFAULT_ANIMATION_MODE
+        self._attr_options = list(TRANSITION_STYLES)
+        self._current_option: str = DEFAULT_TRANSITION_STYLE
 
-        # Seed runtime data so the light entity sees the right mode immediately.
-        _entry_data(hass, entry.entry_id)["animation_mode"] = self._current_option
+        # Seed runtime data so the light entity sees the right style immediately.
+        _entry_data(hass, entry.entry_id)["transition_style"] = self._current_option
 
         base_name = get_entity_base_name(hass, light_entities)
-        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_animation_mode"
-        self.entity_id = f"select.chameleon_{base_name}_animation_mode"
+        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_transition_style"
+        self.entity_id = f"select.chameleon_{base_name}_transition_style"
 
     def _get_animation_manager(self) -> AnimationManager | None:
         """Get the AnimationManager from hass.data."""
@@ -95,7 +95,7 @@ class ChameleonAnimationModeSelect(SelectEntity):
 
     @property
     def current_option(self) -> str:
-        """Return the currently selected mode."""
+        """Return the currently selected style."""
         return self._current_option
 
     @property
@@ -104,21 +104,21 @@ class ChameleonAnimationModeSelect(SelectEntity):
         return {"light_entities": self._light_entities}
 
     async def async_select_option(self, option: str) -> None:
-        """Handle a mode change.
+        """Handle a style change.
 
-        If an animation is running, push the new mode in live. Otherwise the
-        new mode just takes effect on the next scene change.
+        If an animation is running, push the new style in live. Otherwise the
+        new style just takes effect on the next scene change.
         """
-        if option not in ANIMATION_MODES:
-            _LOGGER.warning("Unknown animation mode: %s", option)
+        if option not in TRANSITION_STYLES:
+            _LOGGER.warning("Unknown transition style: %s", option)
             return
 
         self._current_option = option
-        _entry_data(self.hass, self._entry.entry_id)["animation_mode"] = option
-        _LOGGER.info("Animation mode set to '%s' for %s", option, self._light_entities)
+        _entry_data(self.hass, self._entry.entry_id)["transition_style"] = option
+        _LOGGER.info("Transition style set to '%s' for %s", option, self._light_entities)
 
         manager = self._get_animation_manager()
         if manager and manager.is_running(self._entry.entry_id):
-            manager.update_mode(self._entry.entry_id, option)
+            manager.update_style(self._entry.entry_id, option)
 
         self.async_write_ha_state()

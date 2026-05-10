@@ -49,13 +49,13 @@ from .color_extractor import (
     generate_gradient_path,
 )
 from .const import (
-    CONF_ANIMATION_SPEED,
     CONF_LIGHT_ENTITIES,
     CONF_LIGHT_ENTITY,
-    DEFAULT_ANIMATION_MODE,
-    DEFAULT_ANIMATION_SPEED,
+    CONF_TRANSITION,
     DEFAULT_BRIGHTNESS,
     DEFAULT_COLOR_COUNT,
+    DEFAULT_TRANSITION,
+    DEFAULT_TRANSITION_STYLE,
     DOMAIN,
     IMAGE_DIRECTORY,
     SCENE_OFF,
@@ -85,10 +85,10 @@ async def async_setup_entry(
     else:
         light_entities = [entry.data[CONF_LIGHT_ENTITY]]
 
-    initial_speed = entry.data.get(CONF_ANIMATION_SPEED, DEFAULT_ANIMATION_SPEED)
+    initial_transition = entry.data.get(CONF_TRANSITION, DEFAULT_TRANSITION)
 
     async_add_entities(
-        [ChameleonLight(hass, entry, light_entities, initial_speed)],
+        [ChameleonLight(hass, entry, light_entities, initial_transition)],
         True,
     )
 
@@ -123,13 +123,13 @@ class ChameleonLight(LightEntity):
         hass: HomeAssistant,
         entry: ConfigEntry,
         light_entities: list[str],
-        initial_speed: float,
+        initial_transition: float,
     ) -> None:
         """Initialize the Chameleon light entity."""
         self.hass = hass
         self._entry = entry
         self._light_entities = light_entities
-        self._initial_speed = initial_speed
+        self._initial_transition = initial_transition
 
         # Visible state
         self._is_on = False
@@ -167,11 +167,11 @@ class ChameleonLight(LightEntity):
     def _get_animation_manager(self) -> AnimationManager | None:
         return self.hass.data.get(DOMAIN, {}).get("animation_manager")
 
-    def _get_runtime_animation_speed(self) -> float:
-        return _entry_data(self.hass, self._entry.entry_id).get("animation_speed", self._initial_speed)
+    def _get_runtime_transition(self) -> float:
+        return _entry_data(self.hass, self._entry.entry_id).get("transition", self._initial_transition)
 
-    def _get_runtime_animation_mode(self) -> str:
-        return _entry_data(self.hass, self._entry.entry_id).get("animation_mode", DEFAULT_ANIMATION_MODE)
+    def _get_runtime_transition_style(self) -> str:
+        return _entry_data(self.hass, self._entry.entry_id).get("transition_style", DEFAULT_TRANSITION_STYLE)
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -446,10 +446,10 @@ class ChameleonLight(LightEntity):
         if manager:
             await manager.stop(self._entry.entry_id)
 
-        speed = self._get_runtime_animation_speed()
+        transition = self._get_runtime_transition()
         brightness = self._brightness_pct
 
-        if speed > 0:
+        if transition > 0:
             result = await self._apply_colors_animated(image_path, brightness)
         else:
             result = await self._apply_colors_static(image_path, brightness)
@@ -459,8 +459,8 @@ class ChameleonLight(LightEntity):
             self._last_effect = effect
             self._applied_colors = result.applied_colors
             self._last_scene_change = datetime.now()
-            mode = "animation started" if speed > 0 else "applied"
-            _LOGGER.info("Scene '%s' %s successfully", effect, mode)
+            verb = "animation started" if transition > 0 else "applied"
+            _LOGGER.info("Scene '%s' %s successfully", effect, verb)
         elif result.all_failed:
             self._last_error = "Failed to apply colors to any lights"
             self._failed_lights = result.failed_lights
@@ -546,8 +546,8 @@ class ChameleonLight(LightEntity):
             _LOGGER.error("AnimationManager not available")
             return ApplyColorsResult()
 
-        speed = self._get_runtime_animation_speed()
-        mode = self._get_runtime_animation_mode()
+        transition = self._get_runtime_transition()
+        style = self._get_runtime_transition_style()
 
         colors = await extract_color_palette(
             self.hass,
@@ -590,15 +590,15 @@ class ChameleonLight(LightEntity):
                 self._entry.entry_id,
                 available_lights,
                 gradient,
-                speed=speed,
-                mode=mode,
+                transition=transition,
+                style=style,
                 brightness=brightness,
             )
             _LOGGER.info(
-                "Started %s animation for %d lights (speed=%.1fs)",
-                mode,
+                "Started %s animation for %d lights (transition=%.1fs)",
+                style,
                 len(available_lights),
-                speed,
+                transition,
             )
 
         return ApplyColorsResult(results=results)

@@ -2,9 +2,9 @@ apply_scene:
   name: Apply Scene
   description: >-
     Apply a scene to one or more Chameleon light entities. Optionally set
-    brightness and animation speed in the same call so the scene renders at
-    the requested values directly. To start animation set speed > 0; to stop
-    it set speed = 0 (also expressible as a plain number.set_value call).
+    brightness and transition in the same call so the scene renders at the
+    requested values directly. To start animation set transition > 0; to stop
+    it set transition = 0 (also expressible as a plain number.set_value call).
   target:
     entity:
       domain: light
@@ -26,9 +26,9 @@ apply_scene:
           max: 100
           step: 1
           unit_of_measurement: "%"
-    speed:
-      name: Animation Speed
-      description: Optional animation speed in seconds (0 = static, no animation)
+    transition:
+      name: Transition
+      description: Optional fade duration in seconds (0 = static, no animation)
       required: false
       selector:
         number:

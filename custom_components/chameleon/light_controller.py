@@ -33,7 +33,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 
 from .color_extractor import RGBColor
-from .const import DEFAULT_TRANSITION_TIME
+from .const import STATIC_TRANSITION_TIME
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ class LightController:
         ColorMode.XY,
     }
 
-    def __init__(self, hass: HomeAssistant, transition_time: float = DEFAULT_TRANSITION_TIME) -> None:
+    def __init__(self, hass: HomeAssistant, transition_time: float = STATIC_TRANSITION_TIME) -> None:
         """Initialize the light controller.
 
         Args:

@@ -16,10 +16,10 @@ from .const import (
     ATTR_SCENE_NAME,
     DOMAIN,
     IMAGE_DIRECTORY,
-    MAX_ANIMATION_SPEED,
     MAX_BRIGHTNESS,
-    MIN_ANIMATION_SPEED,
+    MAX_TRANSITION,
     MIN_BRIGHTNESS,
+    MIN_TRANSITION,
     PLATFORMS,
     SERVICE_APPLY_SCENE,
     SERVICE_REFRESH_SCENES,
@@ -33,7 +33,7 @@ SERVICE_APPLY_SCENE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_SCENE_NAME): cv.string,
         vol.Optional("brightness"): vol.All(vol.Coerce(int), vol.Range(min=MIN_BRIGHTNESS, max=MAX_BRIGHTNESS)),
-        vol.Optional("speed"): vol.All(vol.Coerce(float), vol.Range(min=MIN_ANIMATION_SPEED, max=MAX_ANIMATION_SPEED)),
+        vol.Optional("transition"): vol.All(vol.Coerce(float), vol.Range(min=MIN_TRANSITION, max=MAX_TRANSITION)),
     }
 )
 
@@ -68,14 +68,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v1 → v2: multi-light support (light_entity → light_entities). Already in place
              via the runtime fallback in each platform's setup; nothing to do here.
     v2 → v3: removes the ``ChameleonAnimationSwitch`` / ``ChameleonSyncAnimationSwitch``
-             entities (animation on/off is now ``animation_speed > 0``; sync vs
-             staggered is now an animation_mode select). Strips the unused
+             entities (animation on/off is now ``transition > 0``; sync vs
+             staggered is now a transition_style select). Strips the unused
              ``animation_enabled`` key from entry.data. Also removes the
              ``ChameleonRefreshButton`` (replaced by the chameleon.refresh_scenes
              service action).
     v3 → v4: collapses the scene select and brightness number into a single light
              entity that exposes scenes via ``LightEntityFeature.EFFECT`` and
-             owns brightness natively.
+             owns brightness natively. Renames the ``animation_speed`` slider
+             entity to ``transition`` and the ``animation_mode`` select to
+             ``transition_style``; renames the ``animation_speed`` key in
+             entry.data to ``transition``.
     """
     target_version = 4
     _LOGGER.info(
@@ -112,12 +115,45 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"{DOMAIN}_{entry.entry_id}_scene",
             f"{DOMAIN}_{entry.entry_id}_brightness",
         }
+        # Rename the animation_speed slider → transition, animation_mode → transition_style.
+        # We rename in-place (preserving the user's customisations like custom name
+        # / area / icon) by updating unique_id + entity_id on the existing entry.
+        rename_map = {
+            f"{DOMAIN}_{entry.entry_id}_animation_speed": (
+                f"{DOMAIN}_{entry.entry_id}_transition",
+                "_animation_speed",
+                "_transition",
+            ),
+            f"{DOMAIN}_{entry.entry_id}_animation_mode": (
+                f"{DOMAIN}_{entry.entry_id}_transition_style",
+                "_animation_mode",
+                "_transition_style",
+            ),
+        }
+
         for ent in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
             if ent.unique_id in v3_orphans:
                 _LOGGER.info("Removing orphan v3 entity: %s", ent.entity_id)
                 entity_registry.async_remove(ent.entity_id)
+                continue
 
-        hass.config_entries.async_update_entry(entry, version=4)
+            rename = rename_map.get(ent.unique_id)
+            if rename is not None:
+                new_unique_id, old_suffix, new_suffix = rename
+                new_entity_id = ent.entity_id.replace(old_suffix, new_suffix)
+                _LOGGER.info("Renaming entity: %s → %s", ent.entity_id, new_entity_id)
+                entity_registry.async_update_entity(
+                    ent.entity_id,
+                    new_unique_id=new_unique_id,
+                    new_entity_id=new_entity_id,
+                )
+
+        # Rename entry.data["animation_speed"] → entry.data["transition"].
+        new_data = dict(entry.data)
+        if "animation_speed" in new_data:
+            new_data["transition"] = new_data.pop("animation_speed")
+
+        hass.config_entries.async_update_entry(entry, data=new_data, version=4)
 
     return True
 
@@ -141,8 +177,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ChameleonConfigEntry) -
 def _light_entity_sibling(light_entity_id: str, sibling_suffix: str, domain: str = "number") -> str:
     """Derive a sibling entity ID from a Chameleon light entity ID.
 
-    ``light.chameleon_living_room`` + ``"animation_speed"`` →
-    ``number.chameleon_living_room_animation_speed``.
+    ``light.chameleon_living_room`` + ``"transition"`` →
+    ``number.chameleon_living_room_transition``.
     """
     base = light_entity_id.removeprefix("light.")
     return f"{domain}.{base}_{sibling_suffix}"
@@ -154,44 +190,45 @@ async def _async_register_services(hass: HomeAssistant) -> None:
     Two services:
 
     - ``apply_scene``: targets the Chameleon light entity. Optionally accepts
-      ``brightness`` and ``speed`` to set those values atomically with the
-      scene change. To start animation pass ``speed > 0``; to stop it pass
-      ``speed = 0`` (also expressible as a plain number.set_value call).
+      ``brightness`` and ``transition`` to set those values atomically with the
+      scene change. To start animation pass ``transition > 0``; to stop it
+      pass ``transition = 0`` (also expressible as a plain number.set_value
+      call).
     - ``refresh_scenes``: rescans the image directory for every Chameleon
       config. No target needed.
 
-    Direct slider control (animation speed, animation mode) still goes through
+    Direct slider control (transition, transition style) still goes through
     the standard ``number.set_value`` / ``select.select_option`` services per
     HA convention — we don't wrap those.
     """
 
     async def handle_apply_scene(call: ServiceCall) -> None:
-        """Apply a scene, optionally setting brightness and/or speed first.
+        """Apply a scene, optionally setting brightness and/or transition first.
 
-        ``brightness`` and ``speed`` are optional; if omitted, the existing values
-        are preserved. Brightness flows directly into ``light.turn_on``;
-        speed must be set on the sibling number entity first because the light
-        entity doesn't own the animation tick rate.
+        ``brightness`` and ``transition`` are optional; if omitted, the existing
+        values are preserved. Brightness flows directly into ``light.turn_on``;
+        transition must be set on the sibling number entity first because the
+        light entity doesn't own the animation tick rate.
         """
         entity_ids: list[str] = call.data.get("entity_id", [])
         scene_name: str = call.data[ATTR_SCENE_NAME]
         brightness = call.data.get("brightness")  # 0-100 in Chameleon scale
-        speed = call.data.get("speed")
+        transition = call.data.get("transition")
 
         for entity_id in entity_ids:
             if not entity_id.startswith("light.chameleon_"):
                 _LOGGER.warning("Skipping %s: not a Chameleon light entity", entity_id)
                 continue
 
-            # Speed lives on a sibling number entity — set it before the scene
-            # is applied so the light's _apply_effect reads the new value.
-            if speed is not None:
+            # Transition lives on a sibling number entity — set it before the
+            # scene is applied so the light's _apply_effect reads the new value.
+            if transition is not None:
                 await hass.services.async_call(
                     "number",
                     "set_value",
                     {
-                        "entity_id": _light_entity_sibling(entity_id, "animation_speed"),
-                        "value": speed,
+                        "entity_id": _light_entity_sibling(entity_id, "transition"),
+                        "value": transition,
                     },
                     blocking=True,
                 )

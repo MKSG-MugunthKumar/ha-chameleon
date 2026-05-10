@@ -105,7 +105,7 @@ type: tile
 entity: light.chameleon_bedroom_lamp
 ```
 
-**Complete control card** (light + companions for animation speed and mode):
+**Complete control card** (light + companions for transition and style):
 
 ```yaml
 type: vertical-stack
@@ -117,10 +117,10 @@ cards:
       - type: light-color-temp # optional — RGB color picker also works
   - type: entities
     entities:
-      - entity: number.chameleon_bedroom_lamp_animation_speed
-        name: Speed (0 = static)
-      - entity: select.chameleon_bedroom_lamp_animation_mode
-        name: Mode
+      - entity: number.chameleon_bedroom_lamp_transition
+        name: Transition (0 = static)
+      - entity: select.chameleon_bedroom_lamp_transition_style
+        name: Style
 ```
 
 **Mushroom Light Card example** (a popular custom card that handles effects beautifully):
@@ -136,8 +136,8 @@ collapsible_controls: true
 > **Note**: Replace `bedroom_lamp` with your light's base name. Entity IDs follow the pattern:
 >
 > - `light.chameleon_{light_name}` — primary entity. Brightness, color preview, and effect dropdown (the scene list) live here.
-> - `number.chameleon_{light_name}_animation_speed` — seconds per color tick. **0** = static (no animation). Speed > 0 enables continuous fades between scene colors.
-> - `select.chameleon_{light_name}_animation_mode` — `synchronized` (all lights change together) or `staggered` (each light independently with random phase offsets).
+> - `number.chameleon_{light_name}_transition` — fade duration per color, in seconds. **0** = static (no animation). Any value > 0 enables continuous smooth fades between scene colors.
+> - `select.chameleon_{light_name}_transition_style` — `synchronized` (all lights change together) or `staggered` (each light independently with random phase offsets).
 >
 > After adding or removing image files in `/config/www/chameleon/`, refresh the scene list with the **`chameleon.refresh_scenes`** action (Developer Tools → Actions, or call from an automation). The list is also refreshed automatically when the integration is reloaded (Settings → Devices & Services → Chameleon → ⋯ → Reload).
 >
@@ -209,10 +209,10 @@ data:
 ```
 
 ```yaml
-# Drive the animation speed slider with stock HA action
+# Drive the transition slider with stock HA action
 action: number.set_value
 target:
-  entity_id: number.chameleon_bedroom_lamp_animation_speed
+  entity_id: number.chameleon_bedroom_lamp_transition
 data:
   value: 2.5
 ```
@@ -261,16 +261,16 @@ recorder:
       - light.chameleon_*
 ```
 
-### Animation Speed
+### Transition
 
-The animation speed slider runs from `0` to `10` seconds (default: 5s). The slider has 100 positions, so dragging is precise.
+The transition slider runs from `0` to `10` seconds (default: 5s). The slider has 100 positions, so dragging is precise. Each value is the duration of one color fade — the light is always mid-transition between colors when an animation is running.
 
 - **0** — Static. Animation is disabled and the scene is applied as a single color (or palette across multiple lights).
 - **0.1–1s** — Snappy, energetic. Good for parties, music sync, or emphasizing a single light.
 - **1–5s** — Dynamic but watchable. The default range for "ambient lighting that changes."
 - **5–10s** — Subtle, slow drift. Best for background ambience.
 
-Regardless of speed, consider recorder exclusion for animated lights — even at 5s, that's ~17,000 state changes per day per light.
+Regardless of transition length, consider recorder exclusion for animated lights — even at 5s, that's ~17,000 state changes per day per light.
 
 ## Troubleshooting
 
@@ -326,7 +326,7 @@ Are you a developer? Continue reading for architecture details, error handling s
 | `const.py`            | All constants and configuration keys                                                                                         |
 | `light.py`            | Primary entity — scene/effect picker, brightness, on/off, manual color override, palette extraction, animation orchestration |
 | `select.py`           | Animation mode select (synchronized vs staggered)                                                                            |
-| `number.py`           | Animation speed slider (with zero-value = static mode)                                                                       |
+| `number.py`           | Transition slider (with zero-value = static mode)                                                                            |
 | `light_controller.py` | Shared light control logic (availability, color application)                                                                 |
 | `color_extractor.py`  | Color extraction from images                                                                                                 |
 | `animations.py`       | Single AnimationController + AnimationManager (one per entry); transition = speed for smooth fades                           |
@@ -459,9 +459,9 @@ Quick start:
 
 - [x] **Native light entity** - `light.chameleon_*` is the primary entity. Scenes are exposed as HA effects via `LightEntityFeature.EFFECT`; brightness and on/off are native; manual color picks bypass scenes and apply directly. Drops into stock Tile/Mushroom/Bubble cards as a single first-class light.
 - [x] **Off via `turn_off`** - The light's `turn_off` replaces the previous "Off" scene. Bare `turn_on` after off restores the last applied scene (Random if none).
-- [x] **Animation speed entity** - Runtime-adjustable number entity (0–10s, 0 = static)
+- [x] **Transition slider** - Runtime-adjustable `number.{light}_transition` (0–10s, 0 = static). Doubles as the per-color fade duration.
 - [x] **Smooth color fades** - Animation loop sends `transition = speed` so each color change fades over the full interval. No more snap-and-hold jumps.
-- [x] **Sync/staggered modes** - `select.{light}_animation_mode` lets each light cycle in lockstep or with organic random delays
+- [x] **Sync/staggered styles** - `select.{light}_transition_style` lets each light cycle in lockstep or with organic random phase offsets
 - [x] **Random scene** - Available as the `Random` effect; picks a random scene from available images
 - [x] **Dominant color attributes** - `dominant_color`, `dominant_color_hex`, plus HSV decomposition for template-driven dashboards and "warm vs cool" automations
 - [x] **Extracted palette** - Full color palette exposed in state attributes

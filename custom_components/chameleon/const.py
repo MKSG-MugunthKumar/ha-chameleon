@@ -7,7 +7,7 @@ DOMAIN: Final = "chameleon"
 
 # Default values
 DEFAULT_NAME: Final = "Chameleon"
-DEFAULT_ANIMATION_SPEED: Final = 5  # seconds per color transition
+DEFAULT_TRANSITION: Final = 5  # default fade duration per color, seconds
 
 # Image directory (hardcoded per design decision)
 IMAGE_DIRECTORY: Final = "/config/www/chameleon"
@@ -18,10 +18,10 @@ SUPPORTED_EXTENSIONS: Final = (".jpg", ".jpeg", ".png")
 # Configuration keys
 CONF_LIGHT_ENTITY: Final = "light_entity"  # Deprecated, kept for migration
 CONF_LIGHT_ENTITIES: Final = "light_entities"  # New: list of light entities
-CONF_ANIMATION_SPEED: Final = "animation_speed"
+CONF_TRANSITION: Final = "transition"
 
-# Platforms. Light is the primary entity; select hosts the animation mode picker;
-# number hosts the animation speed slider. No switch (animation on/off is speed=0)
+# Platforms. Light is the primary entity; select hosts the transition style picker;
+# number hosts the transition slider. No switch (animation on/off is transition=0)
 # and no scene select (scenes are exposed as the light's effects).
 PLATFORMS: Final = ["light", "select", "number"]
 
@@ -41,20 +41,23 @@ SCENE_RANDOM: Final = "Random"  # Pick a random scene
 DEFAULT_COLOR_COUNT: Final = 8  # Number of colors to extract for palette
 DEFAULT_QUALITY: Final = 10  # Color extraction quality (1 = highest, 10 = fastest)
 
-# Animation
-# Speed of 0 means "static" — apply the scene once with no animation loop.
-# Range chosen for usable slider precision: 100 positions over 0-10s with 0.1s step.
-# 10s is enough for most ambient-lighting use cases; longer cycles can be set via
-# the number entity's box mode or a service call if a power user wants them.
-MIN_ANIMATION_SPEED: Final = 0
-MAX_ANIMATION_SPEED: Final = 10
-DEFAULT_TRANSITION_TIME: Final = 0.1  # Instant snap transitions
+# Animation transition
+# A "transition" is the seconds-long fade duration between successive scene
+# colors. Transition of 0 means "static" — apply the scene once with no
+# animation loop. Range chosen for usable slider precision: 100 positions over
+# 0-10s with 0.1s step. 10s is enough for most ambient-lighting use cases.
+MIN_TRANSITION: Final = 0
+MAX_TRANSITION: Final = 10
 
-# Animation modes (used by ChameleonAnimationModeSelect)
-ANIMATION_MODE_SYNC: Final = "synchronized"
-ANIMATION_MODE_STAGGERED: Final = "staggered"
-ANIMATION_MODES: Final = [ANIMATION_MODE_SYNC, ANIMATION_MODE_STAGGERED]
-DEFAULT_ANIMATION_MODE: Final = ANIMATION_MODE_STAGGERED  # More natural-looking by default
+# Static apply transition: the per-call transition seconds we use for one-shot
+# scene application (when transition = 0). Kept short for snappy feel.
+STATIC_TRANSITION_TIME: Final = 0.1
+
+# Transition styles (used by ChameleonTransitionStyleSelect)
+TRANSITION_STYLE_SYNC: Final = "synchronized"
+TRANSITION_STYLE_STAGGERED: Final = "staggered"
+TRANSITION_STYLES: Final = [TRANSITION_STYLE_SYNC, TRANSITION_STYLE_STAGGERED]
+DEFAULT_TRANSITION_STYLE: Final = TRANSITION_STYLE_STAGGERED  # More natural-looking by default
 
 # Brightness
 # Brightness of 0 means "off" — equivalent to selecting the Off scene.
