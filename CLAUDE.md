@@ -25,7 +25,7 @@ When working on this project:
 ## Verification
 
 - Lint, format, and type checks run via pre-commit hooks (configured in `.pre-commit-config.yaml`); they trigger on every commit and in CI. Run them manually with `pre-commit run --all-files`.
-- Tests are not in pre-commit. Run with `make test` (or `make test-quick`). Local install needs a C compiler (`pytest-homeassistant-custom-component` → `lru-dict` builds via gcc); CI handles this.
+- Tests are not in pre-commit. Run with `make test`. Local install needs a C compiler (`pytest-homeassistant-custom-component` → `lru-dict` builds via gcc); CI handles this.
 
 ## Architectural Patterns
 

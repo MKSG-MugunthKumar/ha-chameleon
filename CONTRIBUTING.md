@@ -49,8 +49,7 @@ pre-commit run --all-files
 Tests are not in pre-commit (they're slower); run them with:
 
 ```bash
-make test         # full run with coverage
-make test-quick   # without coverage
+make test
 ```
 
 ## Pull Request Process
@@ -155,9 +154,6 @@ custom_components/chameleon/
 ```bash
 # Run all tests with coverage
 make test
-
-# Run tests without coverage (faster)
-make test-quick
 
 # Run specific test file
 pytest tests/test_light_controller.py -v

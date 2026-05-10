@@ -7,7 +7,7 @@
 # whole tree, use `pre-commit run --all-files`. CI also runs them on PRs.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup test test-quick test-watch clean clean-all deploy \
+.PHONY: help setup test clean clean-all deploy \
         dev-setup dev-start dev-stop dev-restart dev-logs dev-shell dev-status
 
 # Colors
@@ -32,14 +32,6 @@ setup: ## Setup development environment (installs tools and pre-commit hooks)
 test: ## Run all tests with coverage
 	@echo "$(BLUE)Running tests...$(NC)"
 	@pytest tests/ -v --cov=custom_components.chameleon --cov-report=term-missing
-
-test-quick: ## Run tests without coverage (faster)
-	@echo "$(BLUE)Running tests (quick mode)...$(NC)"
-	@pytest tests/ -v
-
-test-watch: ## Run tests in watch mode (requires pytest-watch)
-	@echo "$(BLUE)Running tests in watch mode...$(NC)"
-	@ptw tests/ -- -v
 
 #──────────────────────────────────────────────────────────────────────────────
 # Cleaning
