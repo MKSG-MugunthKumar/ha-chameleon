@@ -1,4 +1,13 @@
-"""Animation loop and color cycling for Chameleon integration."""
+"""Animation loop and color cycling for Chameleon integration.
+
+A single :class:`AnimationController` handles both synchronized and staggered
+modes — staggered just inserts a per-light random pre-tick delay. Speed,
+brightness, and mode can be updated live without restarting the controller.
+
+Speed of 0 disables animation entirely; the caller (number entity) is expected
+to stop the controller before setting speed=0, so the loop is defensive but
+should not normally see speed<=0 while running.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +19,11 @@ from typing import TYPE_CHECKING
 from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATTR_TRANSITION
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_ON
 
-from .const import DEFAULT_TRANSITION_TIME
+from .const import (
+    ANIMATION_MODE_SYNC,
+    DEFAULT_ANIMATION_MODE,
+    DEFAULT_TRANSITION_TIME,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -21,129 +34,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class AnimationController:
-    """Controls color animation for a light entity."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        light_entity: str,
-        colors: list[RGBColor],
-        speed: float,
-        transition: float = DEFAULT_TRANSITION_TIME,
-        brightness: int | None = None,
-    ) -> None:
-        """
-        Initialize the animation controller.
-
-        Args:
-            hass: Home Assistant instance
-            light_entity: Entity ID of the light to animate
-            colors: List of RGB colors to cycle through
-            speed: Seconds between color changes
-            transition: Transition time for light changes
-            brightness: Brightness percentage (1-100), converted to 0-255 for HA
-        """
-        self.hass = hass
-        self.light_entity = light_entity
-        self.colors = colors
-        self.speed = speed
-        self.transition = transition
-        self.brightness = brightness
-
-        self._running = False
-        self._task: asyncio.Task | None = None
-        self._current_index = 0
-
-    @property
-    def is_running(self) -> bool:
-        """Return True if animation is currently running."""
-        return self._running
-
-    async def start(self) -> None:
-        """Start the animation loop."""
-        if self._running:
-            _LOGGER.warning("Animation already running for %s", self.light_entity)
-            return
-
-        if not self.colors:
-            _LOGGER.error("No colors provided for animation on %s", self.light_entity)
-            return
-
-        self._running = True
-        self._task = asyncio.create_task(self._animation_loop())
-        _LOGGER.info(
-            "Started animation for %s with %d colors",
-            self.light_entity,
-            len(self.colors),
-        )
-
-    async def stop(self) -> None:
-        """Stop the animation loop."""
-        self._running = False
-
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-
-        _LOGGER.info("Stopped animation for %s", self.light_entity)
-
-    async def _animation_loop(self) -> None:
-        """Main animation loop - cycles through colors."""
-        while self._running:
-            try:
-                color = self.colors[self._current_index]
-
-                # Build service call data
-                service_data = {
-                    ATTR_ENTITY_ID: self.light_entity,
-                    ATTR_RGB_COLOR: list(color),
-                    ATTR_TRANSITION: self.transition,
-                }
-
-                # Add brightness if specified
-                if self.brightness is not None:
-                    service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
-
-                # Apply color to light with transition
-                await self.hass.services.async_call(
-                    "light",
-                    SERVICE_TURN_ON,
-                    service_data,
-                    blocking=False,
-                )
-
-                # Move to next color
-                self._current_index = (self._current_index + 1) % len(self.colors)
-
-                # Wait before next color change
-                await asyncio.sleep(self.speed)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                _LOGGER.error("Error in animation loop for %s: %s", self.light_entity, e)
-                await asyncio.sleep(1)  # Brief pause before retry
-
-    def update_colors(self, colors: list[RGBColor]) -> None:
-        """Update the color palette without stopping animation."""
-        self.colors = colors
-        self._current_index = 0
-
-    def update_speed(self, speed: float) -> None:
-        """Update animation speed."""
-        self.speed = speed
-
-
-class SynchronizedAnimationController:
-    """Controls synchronized color animation for multiple lights.
-
-    Each light displays a different color from the gradient (distributed evenly),
-    and all lights cycle through colors together in sync.
-    """
+    """Controls color animation for a group of lights in sync or staggered mode."""
 
     def __init__(
         self,
@@ -151,190 +42,74 @@ class SynchronizedAnimationController:
         light_entities: list[str],
         colors: list[RGBColor],
         speed: float,
-        transition: float = DEFAULT_TRANSITION_TIME,
+        mode: str = DEFAULT_ANIMATION_MODE,
         brightness: int | None = None,
+        transition: float = DEFAULT_TRANSITION_TIME,
     ) -> None:
-        """
-        Initialize the synchronized animation controller.
+        """Initialize the animation controller.
 
         Args:
-            hass: Home Assistant instance
-            light_entities: List of light entity IDs to animate together
-            colors: List of RGB colors to cycle through
-            speed: Seconds between color changes
-            transition: Transition time for light changes
-            brightness: Brightness percentage (1-100), converted to 0-255 for HA
+            hass: Home Assistant instance.
+            light_entities: Light entity IDs to animate as a group.
+            colors: Gradient colors to cycle through.
+            speed: Seconds per color tick. Must be > 0 to start.
+            mode: ``ANIMATION_MODE_SYNC`` or ``ANIMATION_MODE_STAGGERED``.
+            brightness: Brightness percentage (0-100), converted to 0-255 for HA.
+            transition: Light service transition seconds.
         """
         self.hass = hass
-        self.light_entities = light_entities
-        self.colors = colors
-        self.speed = speed
-        self.transition = transition
+        self.light_entities = list(light_entities)
+        self.colors = list(colors)
+        self.speed = max(0.0, float(speed))
+        self.mode = mode
         self.brightness = brightness
-
-        self._running = False
-        self._task: asyncio.Task | None = None
-        self._current_index = 0
-
-        # Calculate offset for each light to distribute colors evenly across the gradient
-        num_lights = len(light_entities)
-        num_colors = len(colors)
-        # Spread lights evenly across the color gradient
-        self._light_offsets = [(i * num_colors) // num_lights for i in range(num_lights)]
-
-    @property
-    def is_running(self) -> bool:
-        """Return True if animation is currently running."""
-        return self._running
-
-    async def start(self) -> None:
-        """Start the synchronized animation loop."""
-        if self._running:
-            _LOGGER.warning("Synchronized animation already running")
-            return
-
-        if not self.colors:
-            _LOGGER.error("No colors provided for synchronized animation")
-            return
-
-        self._running = True
-        self._task = asyncio.create_task(self._animation_loop())
-        _LOGGER.info(
-            "Started synchronized animation for %d lights with %d colors",
-            len(self.light_entities),
-            len(self.colors),
-        )
-
-    async def stop(self) -> None:
-        """Stop the synchronized animation loop."""
-        self._running = False
-
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-
-        _LOGGER.info("Stopped synchronized animation for %d lights", len(self.light_entities))
-
-    async def _animation_loop(self) -> None:
-        """Main animation loop - each light shows a different color, all cycle in sync."""
-        num_colors = len(self.colors)
-
-        while self._running:
-            try:
-                # Apply a different color to each light based on its offset
-                for i, light_entity in enumerate(self.light_entities):
-                    # Each light gets a color at (current_index + its_offset) % num_colors
-                    color_index = (self._current_index + self._light_offsets[i]) % num_colors
-                    color = self.colors[color_index]
-
-                    # Build service call data for this light
-                    service_data = {
-                        ATTR_ENTITY_ID: light_entity,
-                        ATTR_RGB_COLOR: list(color),
-                        ATTR_TRANSITION: self.transition,
-                    }
-
-                    # Add brightness if specified
-                    if self.brightness is not None:
-                        service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
-
-                    # Apply color to this light
-                    await self.hass.services.async_call(
-                        "light",
-                        SERVICE_TURN_ON,
-                        service_data,
-                        blocking=False,
-                    )
-
-                # Move to next color (all lights advance together)
-                self._current_index = (self._current_index + 1) % num_colors
-
-                # Wait before next color change
-                await asyncio.sleep(self.speed)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                _LOGGER.error("Error in synchronized animation loop: %s", e)
-                await asyncio.sleep(1)  # Brief pause before retry
-
-
-class StaggeredAnimationController:
-    """Controls staggered color animation for multiple lights.
-
-    Each light changes color independently with random delays,
-    creating an organic, non-synchronized breathing effect.
-    """
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        light_entities: list[str],
-        colors: list[RGBColor],
-        speed: float,
-        transition: float = DEFAULT_TRANSITION_TIME,
-        brightness: int | None = None,
-    ) -> None:
-        """Initialize the staggered animation controller.
-
-        Args:
-            hass: Home Assistant instance
-            light_entities: List of light entity IDs to animate
-            colors: List of RGB colors to cycle through
-            speed: Seconds between color changes (max delay for staggering)
-            transition: Transition time for light changes
-            brightness: Brightness percentage (1-100), converted to 0-255 for HA
-        """
-        self.hass = hass
-        self.light_entities = light_entities
-        self.colors = colors
-        self.speed = speed
         self.transition = transition
-        self.brightness = brightness
 
         self._running = False
         self._tasks: list[asyncio.Task] = []
 
-        # Each light gets its own color index to cycle independently
-        num_lights = len(light_entities)
-        num_colors = len(colors)
-        # Start each light at a different position in the color cycle
-        self._light_indices = [(i * num_colors) // num_lights for i in range(num_lights)]
+        # Distribute starting positions across lights so they show different
+        # colors at any given moment (gradient spread effect).
+        num_lights = max(1, len(self.light_entities))
+        num_colors = max(1, len(self.colors))
+        self._initial_offsets = [(i * num_colors) // num_lights for i in range(num_lights)]
 
     @property
     def is_running(self) -> bool:
         """Return True if animation is currently running."""
         return self._running
 
+    @property
+    def synchronized(self) -> bool:
+        """Return True if running in synchronized mode."""
+        return self.mode == ANIMATION_MODE_SYNC
+
     async def start(self) -> None:
-        """Start the staggered animation loops."""
+        """Start the animation loop (one async task per light)."""
         if self._running:
-            _LOGGER.warning("Staggered animation already running")
+            _LOGGER.warning("Animation already running")
             return
 
-        if not self.colors:
-            _LOGGER.error("No colors provided for staggered animation")
+        if not self.colors or not self.light_entities:
+            _LOGGER.error("Cannot start animation: no colors or no lights")
+            return
+
+        if self.speed <= 0:
+            _LOGGER.warning("Cannot start animation with speed=%s", self.speed)
             return
 
         self._running = True
-
-        # Create a separate animation task for each light
-        for i, light_entity in enumerate(self.light_entities):
-            task = asyncio.create_task(self._light_animation_loop(i, light_entity))
-            self._tasks.append(task)
-
+        self._tasks = [asyncio.create_task(self._light_loop(i, entity)) for i, entity in enumerate(self.light_entities)]
         _LOGGER.info(
-            "Started staggered animation for %d lights with %d colors",
+            "Started %s animation for %d lights with %d colors at %.1fs",
+            self.mode,
             len(self.light_entities),
             len(self.colors),
+            self.speed,
         )
 
     async def stop(self) -> None:
-        """Stop all staggered animation loops."""
+        """Stop all animation tasks."""
         self._running = False
 
         for task in self._tasks:
@@ -343,234 +118,150 @@ class StaggeredAnimationController:
                 await task
             except asyncio.CancelledError:
                 pass
-
         self._tasks.clear()
-        _LOGGER.info("Stopped staggered animation for %d lights", len(self.light_entities))
 
-    async def _light_animation_loop(self, light_index: int, light_entity: str) -> None:
-        """Animation loop for a single light with random delays."""
-        num_colors = len(self.colors)
-        color_index = self._light_indices[light_index]
+        _LOGGER.info("Stopped animation for %d lights", len(self.light_entities))
+
+    def update_speed(self, speed: float) -> None:
+        """Update the tick interval. Picked up on the next loop iteration."""
+        self.speed = max(0.0, float(speed))
+
+    def update_brightness(self, brightness: int | None) -> None:
+        """Update brightness applied on the next color tick."""
+        self.brightness = brightness
+
+    def update_mode(self, mode: str) -> None:
+        """Switch between sync and staggered. Effective on next iteration."""
+        self.mode = mode
+
+    async def _light_loop(self, light_index: int, light_entity: str) -> None:
+        """Animation loop for a single light.
+
+        Sync mode: zero pre-tick delay, all lights advance roughly in lockstep.
+        Staggered mode: each light waits a random fraction of `speed` before
+        applying its color, producing an organic non-uniform effect.
+        """
+        color_index = self._initial_offsets[light_index]
 
         while self._running:
             try:
-                # Random delay before changing color (0 to speed seconds)
-                delay = random.uniform(0, self.speed)
-                await asyncio.sleep(delay)
+                # Read live state each iteration so update_*() takes effect.
+                speed = self.speed
+                if speed <= 0:
+                    # Defensive: caller should have stopped us first.
+                    await asyncio.sleep(1)
+                    continue
+
+                delay = 0.0 if self.synchronized else random.uniform(0, speed)
+                if delay > 0:
+                    await asyncio.sleep(delay)
 
                 if not self._running:
                     break
 
-                color = self.colors[color_index]
+                color = self.colors[color_index % len(self.colors)]
+                await self._apply_color(light_entity, color)
+                color_index = (color_index + 1) % len(self.colors)
 
-                # Build service call data
-                service_data = {
-                    ATTR_ENTITY_ID: light_entity,
-                    ATTR_RGB_COLOR: list(color),
-                    ATTR_TRANSITION: self.transition,
-                }
-
-                # Add brightness if specified
-                if self.brightness is not None:
-                    service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
-
-                # Apply color to light
-                await self.hass.services.async_call(
-                    "light",
-                    SERVICE_TURN_ON,
-                    service_data,
-                    blocking=False,
-                )
-
-                # Move to next color
-                color_index = (color_index + 1) % num_colors
-
-                # Wait remaining time until next cycle
-                remaining_wait = self.speed - delay
-                if remaining_wait > 0:
-                    await asyncio.sleep(remaining_wait)
+                remaining = max(0.0, speed - delay)
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                _LOGGER.error("Error in staggered animation for %s: %s", light_entity, e)
+                _LOGGER.error("Animation error for %s: %s", light_entity, e)
                 await asyncio.sleep(1)
+
+    async def _apply_color(self, light_entity: str, color: RGBColor) -> None:
+        """Send a turn_on with the given color (and current brightness)."""
+        service_data: dict[str, object] = {
+            ATTR_ENTITY_ID: light_entity,
+            ATTR_RGB_COLOR: list(color),
+            ATTR_TRANSITION: self.transition,
+        }
+
+        # brightness=0 means lights should be off; the controller shouldn't
+        # really be running in that state, but defensively skip the brightness
+        # attr so we don't fight the off-state.
+        if self.brightness is not None and self.brightness > 0:
+            service_data[ATTR_BRIGHTNESS] = int((self.brightness / 100) * 255)
+
+        await self.hass.services.async_call(
+            "light",
+            SERVICE_TURN_ON,
+            service_data,
+            blocking=False,
+        )
 
 
 class AnimationManager:
-    """Manages animation controllers (individual, synchronized, and staggered)."""
+    """Owns one AnimationController per config entry."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the animation manager."""
         self.hass = hass
         self._controllers: dict[str, AnimationController] = {}
-        self._sync_controller: SynchronizedAnimationController | None = None
-        self._staggered_controller: StaggeredAnimationController | None = None
-        self._sync_lights: set[str] = set()  # Track which lights are in sync/staggered mode
 
-    def get_controller(self, light_entity: str) -> AnimationController | None:
-        """Get the animation controller for a light entity."""
-        return self._controllers.get(light_entity)
+    def get_controller(self, entry_id: str) -> AnimationController | None:
+        """Return the active controller for an entry, or None."""
+        return self._controllers.get(entry_id)
 
-    async def start_animation(
+    def is_running(self, entry_id: str) -> bool:
+        """Return True if the entry has a running animation."""
+        controller = self._controllers.get(entry_id)
+        return controller.is_running if controller else False
+
+    async def start(
         self,
-        light_entity: str,
+        entry_id: str,
+        light_entities: list[str],
         colors: list[RGBColor],
         speed: float,
-        transition: float = DEFAULT_TRANSITION_TIME,
+        mode: str = DEFAULT_ANIMATION_MODE,
         brightness: int | None = None,
+        transition: float = DEFAULT_TRANSITION_TIME,
     ) -> None:
-        """Start or update animation for a single light entity."""
-        # Stop existing animation if running
-        if light_entity in self._controllers:
-            await self._controllers[light_entity].stop()
+        """Start (or replace) the animation for a config entry."""
+        await self.stop(entry_id)
 
-        # Remove from sync if it was in sync mode
-        self._sync_lights.discard(light_entity)
-
-        # Create new controller
         controller = AnimationController(
             self.hass,
-            light_entity,
+            light_entities,
             colors,
             speed,
-            transition,
-            brightness,
+            mode=mode,
+            brightness=brightness,
+            transition=transition,
         )
-        self._controllers[light_entity] = controller
+        self._controllers[entry_id] = controller
         await controller.start()
 
-    async def start_synchronized_animation(
-        self,
-        light_entities: list[str],
-        colors: list[RGBColor],
-        speed: float,
-        transition: float = DEFAULT_TRANSITION_TIME,
-        brightness: int | None = None,
-    ) -> None:
-        """Start synchronized animation for multiple lights.
-
-        All lights will change color at the same time, cycling through the gradient together.
-        """
-        # Stop any existing animations for these lights
-        await self._stop_group_animations(light_entities)
-
-        # Create new synchronized controller
-        self._sync_controller = SynchronizedAnimationController(
-            self.hass,
-            light_entities,
-            colors,
-            speed,
-            transition,
-            brightness,
-        )
-        self._sync_lights = set(light_entities)
-        await self._sync_controller.start()
-
-        _LOGGER.debug(
-            "Started synchronized animation for lights: %s",
-            light_entities,
-        )
-
-    async def start_staggered_animation(
-        self,
-        light_entities: list[str],
-        colors: list[RGBColor],
-        speed: float,
-        transition: float = DEFAULT_TRANSITION_TIME,
-        brightness: int | None = None,
-    ) -> None:
-        """Start staggered animation for multiple lights.
-
-        Each light changes color independently with random delays,
-        creating an organic, non-synchronized effect.
-        """
-        # Stop any existing animations for these lights
-        await self._stop_group_animations(light_entities)
-
-        # Create new staggered controller
-        self._staggered_controller = StaggeredAnimationController(
-            self.hass,
-            light_entities,
-            colors,
-            speed,
-            transition,
-            brightness,
-        )
-        self._sync_lights = set(light_entities)
-        await self._staggered_controller.start()
-
-        _LOGGER.debug(
-            "Started staggered animation for lights: %s",
-            light_entities,
-        )
-
-    async def _stop_group_animations(self, light_entities: list[str]) -> None:
-        """Stop any existing animations for the given lights."""
-        # Stop individual controllers
-        for light_entity in light_entities:
-            if light_entity in self._controllers:
-                await self._controllers[light_entity].stop()
-                del self._controllers[light_entity]
-
-        # Stop existing sync controller if running
-        if self._sync_controller:
-            await self._sync_controller.stop()
-            self._sync_controller = None
-
-        # Stop existing staggered controller if running
-        if self._staggered_controller:
-            await self._staggered_controller.stop()
-            self._staggered_controller = None
-
-        self._sync_lights.clear()
-
-    async def stop_animation(self, light_entity: str) -> None:
-        """Stop animation for a light entity."""
-        # Check if it's in sync/staggered mode
-        if light_entity in self._sync_lights:
-            # Stop the entire group controller when any grouped light is stopped
-            if self._sync_controller:
-                await self._sync_controller.stop()
-                self._sync_controller = None
-            if self._staggered_controller:
-                await self._staggered_controller.stop()
-                self._staggered_controller = None
-            self._sync_lights.clear()
-            return
-
-        # Stop individual controller
-        if light_entity in self._controllers:
-            await self._controllers[light_entity].stop()
-            del self._controllers[light_entity]
+    async def stop(self, entry_id: str) -> None:
+        """Stop the animation for a config entry, if any."""
+        controller = self._controllers.pop(entry_id, None)
+        if controller:
+            await controller.stop()
 
     async def stop_all(self) -> None:
-        """Stop all running animations."""
-        # Stop sync controller
-        if self._sync_controller:
-            await self._sync_controller.stop()
-            self._sync_controller = None
+        """Stop all running animations across all entries."""
+        for entry_id in list(self._controllers.keys()):
+            await self.stop(entry_id)
 
-        # Stop staggered controller
-        if self._staggered_controller:
-            await self._staggered_controller.stop()
-            self._staggered_controller = None
+    def update_speed(self, entry_id: str, speed: float) -> None:
+        """Push a live speed update to the entry's controller, if running."""
+        controller = self._controllers.get(entry_id)
+        if controller:
+            controller.update_speed(speed)
 
-        self._sync_lights.clear()
+    def update_brightness(self, entry_id: str, brightness: int | None) -> None:
+        """Push a live brightness update to the entry's controller, if running."""
+        controller = self._controllers.get(entry_id)
+        if controller:
+            controller.update_brightness(brightness)
 
-        # Stop individual controllers
-        for controller in list(self._controllers.values()):
-            await controller.stop()
-        self._controllers.clear()
-
-    def is_animating(self, light_entity: str) -> bool:
-        """Check if a light entity is currently animating."""
-        # Check sync/staggered mode first
-        if light_entity in self._sync_lights:
-            return (self._sync_controller is not None and self._sync_controller.is_running) or (
-                self._staggered_controller is not None and self._staggered_controller.is_running
-            )
-
-        # Check individual controller
-        controller = self._controllers.get(light_entity)
-        return controller.is_running if controller else False
+    def update_mode(self, entry_id: str, mode: str) -> None:
+        """Push a live mode change to the entry's controller, if running."""
+        controller = self._controllers.get(entry_id)
+        if controller:
+            controller.update_mode(mode)

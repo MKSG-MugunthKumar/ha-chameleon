@@ -1,7 +1,7 @@
 # CLAUDE.md - Chameleon Integration
 
 This file provides guidance to Claude Code when working with the Chameleon custom Home Assistant integration.
-The project overview, the architecture is modular and follows best practices, and more information for how to develop is in README.md. Future planned features are in TODO.md.
+The project overview, the architecture is modular and follows best practices, and more information for how to develop is in README.md. Future planned features are listed in the "Future Features" section at the bottom of README.md.
 
 ## Code Style (Human and AI Alike)
 

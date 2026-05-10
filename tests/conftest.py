@@ -268,7 +268,6 @@ def mock_config_entry() -> MagicMock:
     entry.entry_id = "test_entry_id"
     entry.data = {
         "light_entities": ["light.test_light"],
-        "animation_enabled": False,
         "animation_speed": 5,
     }
     return entry

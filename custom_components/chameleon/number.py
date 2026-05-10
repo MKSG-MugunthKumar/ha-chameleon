@@ -1,8 +1,20 @@
-"""Number platform for Chameleon integration - Brightness control."""
+"""Number platform for Chameleon: brightness and animation speed sliders.
+
+Both sliders use **semantic zero-values**:
+
+- ``brightness == 0`` → behaves like the "Off" scene (lights off). Going back
+  above zero restores the previously-applied scene at the new brightness.
+- ``animation_speed == 0`` → static mode. Any running animation is stopped and
+  the current scene is re-applied as a static color/palette.
+
+Live updates: while an animation is running, slider drags push the new value
+into the running controller without restarting it.
+"""
 
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
@@ -24,6 +36,10 @@ from .const import (
 )
 from .helpers import get_chameleon_device_name, get_entity_base_name
 
+if TYPE_CHECKING:
+    from .animations import AnimationManager
+    from .select import ChameleonSceneSelect
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -35,13 +51,11 @@ async def async_setup_entry(
     """Set up Chameleon number entities from a config entry."""
     _LOGGER.debug("Setting up Chameleon number entities for entry: %s", entry.entry_id)
 
-    # Support both old single-light and new multi-light config
     if CONF_LIGHT_ENTITIES in entry.data:
         light_entities = entry.data[CONF_LIGHT_ENTITIES]
     else:
         light_entities = [entry.data[CONF_LIGHT_ENTITY]]
 
-    # Get initial animation speed from config
     initial_animation_speed = entry.data.get(CONF_ANIMATION_SPEED, DEFAULT_ANIMATION_SPEED)
 
     async_add_entities(
@@ -53,8 +67,24 @@ async def async_setup_entry(
     )
 
 
+def _entry_data(hass: HomeAssistant, entry_id: str) -> dict:
+    """Return (creating if needed) the per-entry runtime dict in hass.data."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    return domain_data.setdefault(entry_id, {})
+
+
+def _get_scene_select(hass: HomeAssistant, entry_id: str) -> ChameleonSceneSelect | None:
+    """Look up the registered scene select entity for this config entry."""
+    return _entry_data(hass, entry_id).get("scene_select")
+
+
+def _get_animation_manager(hass: HomeAssistant) -> AnimationManager | None:
+    """Look up the shared animation manager."""
+    return hass.data.get(DOMAIN, {}).get("animation_manager")
+
+
 class ChameleonBrightnessNumber(NumberEntity):
-    """Number entity for controlling Chameleon brightness."""
+    """Brightness slider. Value of 0 = lights off; remembers last non-zero."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "brightness"
@@ -75,17 +105,11 @@ class ChameleonBrightnessNumber(NumberEntity):
         self._entry = entry
         self._light_entities = light_entities
         self._brightness = DEFAULT_BRIGHTNESS
+        self._last_nonzero = DEFAULT_BRIGHTNESS  # restored when slider goes 0 → >0
 
-        # Generate unique ID and entity ID with chameleon_ prefix
         base_name = get_entity_base_name(hass, light_entities)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_brightness"
         self.entity_id = f"number.chameleon_{base_name}_brightness"
-
-        _LOGGER.debug(
-            "ChameleonBrightnessNumber initialized: entity_id=%s, unique_id=%s",
-            self.entity_id,
-            self._attr_unique_id,
-        )
 
     @property
     def device_info(self):
@@ -99,32 +123,67 @@ class ChameleonBrightnessNumber(NumberEntity):
 
     @property
     def native_value(self) -> float:
-        """Return the current brightness value."""
+        """Return the current brightness percentage (0-100)."""
         return self._brightness
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the brightness value and apply to lights."""
-        self._brightness = int(value)
-        _LOGGER.info("Brightness set to %d%% for %s", self._brightness, self._light_entities)
+        """Handle a slider change.
 
-        # Store brightness in hass.data for select entity to use
-        if DOMAIN not in self.hass.data:
-            self.hass.data[DOMAIN] = {}
-        if self._entry.entry_id not in self.hass.data[DOMAIN]:
-            self.hass.data[DOMAIN][self._entry.entry_id] = {}
+        - 0 → turn lights off; remember scene state.
+        - 0 → >0 → ask the select to re-apply the current scene.
+        - >0 → >0 → push to running animation (or apply directly to lights).
+        """
+        new_value = int(value)
+        previous = self._brightness
+        self._brightness = new_value
 
-        self.hass.data[DOMAIN][self._entry.entry_id]["brightness"] = self._brightness
+        _entry_data(self.hass, self._entry.entry_id)["brightness"] = new_value
 
-        # Apply brightness to lights immediately
-        await self._apply_brightness_to_lights()
+        if new_value > 0:
+            self._last_nonzero = new_value
+
+        _LOGGER.info(
+            "Brightness %d%% → %d%% for %s",
+            previous,
+            new_value,
+            self._light_entities,
+        )
+
+        if new_value == 0:
+            await self._turn_off_lights()
+        elif previous == 0:
+            # Coming back from off — replay the active scene at new brightness.
+            await self._reapply_current_scene()
+        else:
+            # Live update: push to running animation if any, else just bump
+            # brightness on the lights without disturbing color.
+            manager = _get_animation_manager(self.hass)
+            if manager and manager.is_running(self._entry.entry_id):
+                manager.update_brightness(self._entry.entry_id, new_value)
+            await self._apply_brightness_to_lights()
 
         self.async_write_ha_state()
 
-    async def _apply_brightness_to_lights(self) -> None:
-        """Apply the current brightness to all configured lights."""
-        # Convert percentage to HA brightness (0-255)
-        ha_brightness = int((self._brightness / 100) * 255)
+    async def _turn_off_lights(self) -> None:
+        """Turn off all configured lights and stop any running animation."""
+        manager = _get_animation_manager(self.hass)
+        if manager:
+            await manager.stop(self._entry.entry_id)
 
+        for light_entity in self._light_entities:
+            try:
+                await self.hass.services.async_call(
+                    "light",
+                    "turn_off",
+                    {"entity_id": light_entity},
+                    blocking=True,
+                )
+            except Exception:
+                _LOGGER.exception("Failed to turn off %s", light_entity)
+
+    async def _apply_brightness_to_lights(self) -> None:
+        """Bump brightness on lights without changing color."""
+        ha_brightness = int((self._brightness / 100) * 255)
         for light_entity in self._light_entities:
             try:
                 await self.hass.services.async_call(
@@ -136,14 +195,14 @@ class ChameleonBrightnessNumber(NumberEntity):
                     },
                     blocking=True,
                 )
-                _LOGGER.debug(
-                    "Applied brightness %d (%d%%) to %s",
-                    ha_brightness,
-                    self._brightness,
-                    light_entity,
-                )
             except Exception:
                 _LOGGER.exception("Failed to apply brightness to %s", light_entity)
+
+    async def _reapply_current_scene(self) -> None:
+        """Ask the scene select to re-apply its current scene with new state."""
+        select = _get_scene_select(self.hass, self._entry.entry_id)
+        if select is not None:
+            await select.async_reapply_current_scene()
 
     @property
     def extra_state_attributes(self):
@@ -151,11 +210,12 @@ class ChameleonBrightnessNumber(NumberEntity):
         return {
             "light_entities": self._light_entities,
             "brightness_255": int((self._brightness / 100) * 255),
+            "last_nonzero": self._last_nonzero,
         }
 
 
 class ChameleonAnimationSpeedNumber(NumberEntity):
-    """Number entity for controlling Chameleon animation speed."""
+    """Animation speed slider. Value of 0 = static (no animation loop)."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "animation_speed"
@@ -177,19 +237,17 @@ class ChameleonAnimationSpeedNumber(NumberEntity):
         self.hass = hass
         self._entry = entry
         self._light_entities = light_entities
-        self._speed = initial_speed
+        # Clamp to the current allowed range — older config entries may have stored
+        # values from a wider range (the slider used to go up to 60s).
+        self._speed = max(MIN_ANIMATION_SPEED, min(MAX_ANIMATION_SPEED, float(initial_speed)))
+        self._last_nonzero = self._speed if self._speed > 0 else float(DEFAULT_ANIMATION_SPEED)
 
-        # Generate unique ID and entity ID with chameleon_ prefix
+        # Seed runtime data so the select's initial read sees a valid speed.
+        _entry_data(hass, entry.entry_id)["animation_speed"] = self._speed
+
         base_name = get_entity_base_name(hass, light_entities)
         self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_animation_speed"
         self.entity_id = f"number.chameleon_{base_name}_animation_speed"
-
-        _LOGGER.debug(
-            "ChameleonAnimationSpeedNumber initialized: entity_id=%s, unique_id=%s, speed=%s",
-            self.entity_id,
-            self._attr_unique_id,
-            self._speed,
-        )
 
     @property
     def device_info(self):
@@ -203,27 +261,54 @@ class ChameleonAnimationSpeedNumber(NumberEntity):
 
     @property
     def native_value(self) -> float:
-        """Return the current animation speed value."""
+        """Return the current animation speed (seconds per tick)."""
         return self._speed
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the animation speed value."""
-        self._speed = round(value, 1)
-        _LOGGER.info("Animation speed set to %.1fs for %s", self._speed, self._light_entities)
+        """Handle a slider change.
 
-        # Store animation speed in hass.data for other entities to use
-        if DOMAIN not in self.hass.data:
-            self.hass.data[DOMAIN] = {}
-        if self._entry.entry_id not in self.hass.data[DOMAIN]:
-            self.hass.data[DOMAIN][self._entry.entry_id] = {}
+        - 0 → stop animation; re-apply current scene as static.
+        - 0 → >0 → re-apply current scene with animation enabled.
+        - >0 → >0 → push live speed update to the running controller.
+        """
+        new_value = round(float(value), 1)
+        previous = self._speed
+        self._speed = new_value
 
-        self.hass.data[DOMAIN][self._entry.entry_id]["animation_speed"] = self._speed
+        _entry_data(self.hass, self._entry.entry_id)["animation_speed"] = new_value
+
+        if new_value > 0:
+            self._last_nonzero = new_value
+
+        _LOGGER.info(
+            "Animation speed %.1fs → %.1fs for %s",
+            previous,
+            new_value,
+            self._light_entities,
+        )
+
+        crossed_zero_boundary = (previous == 0) != (new_value == 0)
+        if crossed_zero_boundary:
+            # Switch between static and animated: full re-apply.
+            await self._reapply_current_scene()
+        else:
+            # Same mode: live-update the running controller (no-op if not running).
+            manager = _get_animation_manager(self.hass)
+            if manager:
+                manager.update_speed(self._entry.entry_id, new_value)
 
         self.async_write_ha_state()
+
+    async def _reapply_current_scene(self) -> None:
+        """Ask the scene select to re-apply its current scene."""
+        select = _get_scene_select(self.hass, self._entry.entry_id)
+        if select is not None:
+            await select.async_reapply_current_scene()
 
     @property
     def extra_state_attributes(self):
         """Return extra state attributes."""
         return {
             "light_entities": self._light_entities,
+            "last_nonzero": self._last_nonzero,
         }

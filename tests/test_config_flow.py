@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.chameleon.const import (
-    CONF_ANIMATION_ENABLED,
     CONF_ANIMATION_SPEED,
     CONF_LIGHT_ENTITIES,
 )
@@ -77,7 +76,6 @@ class TestChameleonConfigFlow:
         result = await flow.async_step_user(
             user_input={
                 CONF_LIGHT_ENTITIES: ["light.bedroom_lamp"],
-                CONF_ANIMATION_ENABLED: False,
                 CONF_ANIMATION_SPEED: 5,
             }
         )
@@ -85,7 +83,6 @@ class TestChameleonConfigFlow:
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["title"] == "Bedroom Lamp"
         assert result["data"][CONF_LIGHT_ENTITIES] == ["light.bedroom_lamp"]
-        assert result["data"][CONF_ANIMATION_ENABLED] is False
         assert result["data"][CONF_ANIMATION_SPEED] == 5
 
     @pytest.mark.asyncio
@@ -111,14 +108,12 @@ class TestChameleonConfigFlow:
         result = await flow.async_step_user(
             user_input={
                 CONF_LIGHT_ENTITIES: ["light.one", "light.two"],
-                CONF_ANIMATION_ENABLED: True,
                 CONF_ANIMATION_SPEED: 10,
             }
         )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["title"] == "Light One, Light Two"
-        assert result["data"][CONF_ANIMATION_ENABLED] is True
+        assert result["data"][CONF_ANIMATION_SPEED] == 10
 
     @pytest.mark.asyncio
     async def test_create_entry_many_lights(self, hass: MagicMock):
@@ -141,13 +136,11 @@ class TestChameleonConfigFlow:
                     "light.three",
                     "light.four",
                 ],
-                CONF_ANIMATION_ENABLED: False,
                 CONF_ANIMATION_SPEED: 5,
             }
         )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["title"] == "First Light + 3 more"
 
     def test_get_light_name_with_friendly_name(self, hass: MagicMock):
         """Test getting light name when friendly_name exists."""

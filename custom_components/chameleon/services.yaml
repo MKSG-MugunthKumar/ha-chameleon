@@ -15,7 +15,9 @@ apply_scene:
 
 start_animation:
   name: Start Animation
-  description: Enable animation mode and apply a scene
+  description: >-
+    Ensure animation is enabled (sets speed above zero if currently zero)
+    and apply a scene
   target:
     entity:
       domain: select
@@ -30,8 +32,15 @@ start_animation:
 
 stop_animation:
   name: Stop Animation
-  description: Stop color animation
+  description: Stop color animation by setting animation speed to 0
   target:
     entity:
-      domain: switch
+      domain: select
       integration: chameleon
+
+refresh_scenes:
+  name: Refresh Scenes
+  description: >-
+    Rescan the image directory and update the scene list for every
+    Chameleon configuration. Use after adding or removing image files
+    in /config/www/chameleon/.

@@ -6,13 +6,11 @@
         "description": "Set up Chameleon to apply image colors to your lights. Select multiple lights to distribute colors from the image palette across them.",
         "data": {
           "light_entities": "Light Entities",
-          "animation_enabled": "Enable Animation Mode",
           "animation_speed": "Animation Speed"
         },
         "data_description": {
           "light_entities": "The RGB lights to control with scene colors. Each light will receive a unique color from the image palette.",
-          "animation_enabled": "Continuously cycle through colors from the image",
-          "animation_speed": "Seconds between color transitions"
+          "animation_speed": "Seconds between color transitions. Set to 0 to disable animation (static scenes only)."
         }
       }
     },
@@ -27,6 +25,13 @@
     "select": {
       "scene": {
         "name": "Scene"
+      },
+      "animation_mode": {
+        "name": "Animation Mode",
+        "state": {
+          "synchronized": "Synchronized",
+          "staggered": "Staggered"
+        }
       }
     },
     "number": {
@@ -35,19 +40,6 @@
       },
       "animation_speed": {
         "name": "Animation Speed"
-      }
-    },
-    "switch": {
-      "animation": {
-        "name": "Animation"
-      },
-      "sync_animation": {
-        "name": "Sync Lights"
-      }
-    },
-    "button": {
-      "refresh_scenes": {
-        "name": "Refresh Scenes"
       }
     }
   }

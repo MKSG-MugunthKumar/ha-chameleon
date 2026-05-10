@@ -103,7 +103,6 @@ Add this to your Lovelace dashboard to create a control panel for Chameleon:
 ```yaml
 type: vertical-stack
 cards:
-  # Scene selector with entity picture
   - type: entities
     title: Chameleon
     entities:
@@ -111,19 +110,11 @@ cards:
         name: Scene
       - entity: number.bedroom_lamp_brightness
         name: Brightness
-      - entity: switch.bedroom_lamp_animation
+      - entity: number.bedroom_lamp_animation_speed
+        name: Animation Speed
+      - entity: select.bedroom_lamp_animation_mode
         name: Animation Mode
     show_header_toggle: false
-
-  # Alternative: Compact horizontal controls
-  - type: horizontal-stack
-    cards:
-      - type: entity
-        entity: select.bedroom_lamp_scene
-        name: Scene
-      - type: entity
-        entity: switch.bedroom_lamp_animation
-        icon: mdi:animation-play
 ```
 
 **Complete Control Card** (recommended):
@@ -141,19 +132,26 @@ cards:
         icon: mdi:palette
       - entity: number.bedroom_lamp_brightness
         name: Brightness
-      - entity: switch.bedroom_lamp_animation
-        name: Animation
+      - entity: number.bedroom_lamp_animation_speed
+        name: Speed
+      - entity: select.bedroom_lamp_animation_mode
+        name: Mode
     state_color: true
 ```
 
 > **Note**: Replace `bedroom_lamp` with your light's base name. Entity IDs follow the pattern:
 >
 > - `select.{light_name}_scene` - Scene selection (includes Off, Random, and image scenes)
-> - `number.{light_name}_brightness` - Brightness control (1-100%)
-> - `number.{light_name}_animation_speed` - Animation speed (0.1-60 seconds)
-> - `switch.{light_name}_animation` - Enable/disable animation mode
-> - `switch.{light_name}_sync_animation` - Sync vs staggered animation mode
-> - `button.{light_name}_refresh_scenes` - Force rescan of image directory
+> - `number.{light_name}_brightness` - Brightness control (**0** = off, 100 = full)
+> - `number.{light_name}_animation_speed` - Animation speed in seconds (**0** = static, no animation)
+> - `select.{light_name}_animation_mode` - Animation mode: `synchronized` or `staggered`
+>
+> After adding or removing image files in `/config/www/chameleon/`, refresh the scene list with the **`chameleon.refresh_scenes`** action (Developer Tools → Actions, or call from an automation). The list is also refreshed automatically when the integration is reloaded (Settings → Devices & Services → Chameleon → ⋯ → Reload).
+>
+>
+> Setting **brightness to 0** is equivalent to selecting the "Off" scene — lights turn off and the previous brightness is restored when the slider goes back above zero.
+>
+> Setting **animation speed to 0** disables animation — the scene is applied as a static color (or palette across multiple lights). There is no separate animation on/off switch.
 
 ### Custom Lovelace Card
 
@@ -289,15 +287,16 @@ Are you a developer? Continue reading for architecture details, error handling s
 
 ### Module Responsibilities
 
-| Module                | Responsibility                                               |
-| --------------------- | ------------------------------------------------------------ |
-| `__init__.py`         | Integration entry point, setup/unload                        |
-| `config_flow.py`      | UI configuration flow                                        |
-| `const.py`            | All constants and configuration keys                         |
-| `select.py`           | Select entity (scene selection UI)                           |
-| `light_controller.py` | Shared light control logic (availability, color application) |
-| `color_extractor.py`  | Color extraction from images                                 |
-| `animations.py`       | Animation loop management                                    |
+| Module                | Responsibility                                                  |
+| --------------------- | --------------------------------------------------------------- |
+| `__init__.py`         | Integration entry point, setup/unload, services                 |
+| `config_flow.py`      | UI configuration flow                                           |
+| `const.py`            | All constants and configuration keys                            |
+| `select.py`           | Scene select + animation mode select                            |
+| `number.py`           | Brightness and animation speed sliders (with zero-value off)    |
+| `light_controller.py` | Shared light control logic (availability, color application)    |
+| `color_extractor.py`  | Color extraction from images                                    |
+| `animations.py`       | Single AnimationController + AnimationManager (one per entry)   |
 
 ### Key Design Pattern: Separation of Concerns
 
@@ -425,11 +424,12 @@ The built-in entities work great, but a dedicated card could provide:
 
 The card would interact with these entities:
 
-| Entity                      | Type   | Purpose                     |
-| --------------------------- | ------ | --------------------------- |
-| `select.{light}_scene`      | Select | Scene selection             |
-| `number.{light}_brightness` | Number | Brightness control (1-100%) |
-| `switch.{light}_animation`  | Switch | Animation toggle            |
+| Entity                            | Type   | Purpose                                            |
+| --------------------------------- | ------ | -------------------------------------------------- |
+| `select.{light}_scene`            | Select | Scene selection                                    |
+| `number.{light}_brightness`       | Number | Brightness 0–100% (0 = off, restores last on bump) |
+| `number.{light}_animation_speed`  | Number | Seconds per color tick (0 = static / no animation) |
+| `select.{light}_animation_mode`   | Select | `synchronized` or `staggered`                      |
 
 State attributes available on the select entity:
 
@@ -468,7 +468,7 @@ Quick start:
 - [x] **Instant transitions** - Hardcoded 0.1s transition for snappy color changes
 - [x] **Random scene** - "Random" option picks a random scene from available images
 - [x] **Extracted palette** - Full color palette exposed in state attributes
-- [x] **Scene refresh button** - Force rescan of image directory without waiting
+- [x] ~~**Scene refresh button**~~ - removed; directory auto-rescans every 30s
 - [x] **Last scene timestamp** - For automation triggers
 
 ### Custom Lovelace Card
