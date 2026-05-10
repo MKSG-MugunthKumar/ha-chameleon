@@ -1,14 +1,18 @@
 # Makefile for Chameleon Home Assistant Integration
-# Run 'make help' to see available commands
+# Run 'make help' to see available commands.
+#
+# Note: Lint, format, type checking, YAML lint, markdown format, and
+# conventional-commit validation all run automatically via pre-commit hooks
+# (configured in .pre-commit-config.yaml). To run them manually against the
+# whole tree, use `pre-commit run --all-files`. CI also runs them on PRs.
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint format check type clean install-hooks deploy
+.PHONY: help setup test test-quick test-watch clean clean-all deploy \
+        dev-setup dev-start dev-stop dev-restart dev-logs dev-shell dev-status
 
-# Colors - defined as shell commands that output the escape sequence
-# This ensures colors work across different shells and Make versions
+# Colors
 BLUE := $(shell printf '\033[0;34m')
 GREEN := $(shell printf '\033[0;32m')
-YELLOW := $(shell printf '\033[1;33m')
 NC := $(shell printf '\033[0m')
 
 # Paths
@@ -18,50 +22,8 @@ SRC := custom_components/chameleon
 # Setup
 #──────────────────────────────────────────────────────────────────────────────
 
-setup: ## Setup development environment (installs tools and hooks)
+setup: ## Setup development environment (installs tools and pre-commit hooks)
 	@./scripts/setup-dev.sh
-
-install-hooks: ## Install pre-commit hooks only
-	@pre-commit install
-	@pre-commit install --hook-type commit-msg
-	@echo "$(GREEN)✓$(NC) Hooks installed"
-
-#──────────────────────────────────────────────────────────────────────────────
-# Code Quality
-#──────────────────────────────────────────────────────────────────────────────
-
-lint: ## Run linter (ruff) on source code
-	@echo "$(BLUE)Running ruff linter...$(NC)"
-	@ruff check $(SRC)
-
-lint-fix: ## Run linter and auto-fix issues
-	@echo "$(BLUE)Running ruff linter with auto-fix...$(NC)"
-	@ruff check --fix $(SRC)
-
-format: ## Format code with ruff
-	@echo "$(BLUE)Formatting code with ruff...$(NC)"
-	@ruff format $(SRC)
-
-format-check: ## Check code formatting without changes
-	@echo "$(BLUE)Checking code format...$(NC)"
-	@ruff format --check $(SRC)
-
-type: ## Run type checker (ty)
-	@echo "$(BLUE)Running ty type checker...$(NC)"
-	@ty check $(SRC) || echo "$(YELLOW)⚠$(NC) ty not installed or failed (it's still in alpha)"
-
-check: ## Run all checks (lint, format, type)
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo "$(BLUE)  Running all checks$(NC)"
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@$(MAKE) --no-print-directory lint
-	@$(MAKE) --no-print-directory format-check
-	@$(MAKE) --no-print-directory type
-	@echo "$(GREEN)✓$(NC) All checks passed"
-
-pre-commit: ## Run all pre-commit hooks
-	@echo "$(BLUE)Running pre-commit hooks...$(NC)"
-	@pre-commit run --all-files
 
 #──────────────────────────────────────────────────────────────────────────────
 # Testing
@@ -80,14 +42,6 @@ test-watch: ## Run tests in watch mode (requires pytest-watch)
 	@ptw tests/ -- -v
 
 #──────────────────────────────────────────────────────────────────────────────
-# YAML Linting
-#──────────────────────────────────────────────────────────────────────────────
-
-yaml-lint: ## Lint YAML files
-	@echo "$(BLUE)Linting YAML files...$(NC)"
-	@yamllint -c .yamllint.yml .
-
-#──────────────────────────────────────────────────────────────────────────────
 # Cleaning
 #──────────────────────────────────────────────────────────────────────────────
 
@@ -99,20 +53,18 @@ clean: ## Clean build artifacts and caches
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@find . -type f -name "*.pyo" -delete 2>/dev/null || true
-	@echo "$(GREEN)✓$(NC) Cleaned"
+	@echo "$(GREEN)OK$(NC) Cleaned"
 
 clean-all: clean ## Clean everything including venv
 	@rm -rf .venv
-	@echo "$(GREEN)✓$(NC) Cleaned all (including venv)"
+	@echo "$(GREEN)OK$(NC) Cleaned all (including venv)"
 
 #──────────────────────────────────────────────────────────────────────────────
 # Development Server
 #──────────────────────────────────────────────────────────────────────────────
 
 dev-setup: ## Setup development environment and start dev server
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo "$(BLUE)  Setting up Chameleon development environment$(NC)"
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$(BLUE)Setting up Chameleon development environment$(NC)"
 	@$(MAKE) --no-print-directory setup
 	@./scripts/dev-server.sh start
 
@@ -157,7 +109,7 @@ ifndef REMOTE_PATH
 endif
 	@echo "$(BLUE)Deploying to $(REMOTE_HOST):$(DEPLOY_PATH)...$(NC)"
 	@rsync -avz --delete --exclude="__pycache__" $(SRC)/ $(REMOTE_HOST):$(DEPLOY_PATH)/
-	@echo "$(GREEN)✓$(NC) Deployed. Restart Home Assistant to apply changes."
+	@echo "$(GREEN)OK$(NC) Deployed. Restart Home Assistant to apply changes."
 
 #──────────────────────────────────────────────────────────────────────────────
 # Help
@@ -170,4 +122,7 @@ help: ## Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Lint, format, and type checks run automatically via pre-commit hooks."
+	@echo "Run them manually with: $(GREEN)pre-commit run --all-files$(NC)"
 	@echo ""

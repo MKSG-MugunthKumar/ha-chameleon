@@ -26,33 +26,31 @@ Thank you for your interest in contributing to Chameleon! This document provides
    uv pip install -e ".[dev,test]"
    ```
 
-3. Install pre-commit hooks (optional but recommended):
+3. Install pre-commit hooks (also handled by `make setup`):
 
    ```bash
    pre-commit install
+   pre-commit install --hook-type commit-msg
    ```
 
 ## Code Quality
 
-Before submitting a pull request, ensure your code passes all checks:
+Lint, format, type checking, YAML/markdown linting, and conventional-commit
+validation all run automatically via pre-commit hooks (see
+`.pre-commit-config.yaml`). They also run in CI on every PR, so as long as
+your commit succeeds locally you should be in good shape.
+
+To run the full hook suite manually against the whole tree:
 
 ```bash
-make check
+pre-commit run --all-files
 ```
 
-This runs:
-
-- **Ruff** - Linting and formatting
-- **ty** - Type checking
-- **pytest** - Unit tests
-
-### Individual Commands
+Tests are not in pre-commit (they're slower); run them with:
 
 ```bash
-make lint      # Run ruff linter
-make format    # Format code with ruff
-make typecheck # Run ty type checker
-make test      # Run tests with coverage
+make test         # full run with coverage
+make test-quick   # without coverage
 ```
 
 ## Pull Request Process
@@ -67,11 +65,7 @@ make test      # Run tests with coverage
 
 3. **Add tests** for new functionality
 
-4. **Run checks** before committing:
-
-   ```bash
-   make check
-   ```
+4. **Commit your changes** — pre-commit hooks run lint, format, type check, and conventional-commit validation automatically. If any fail, fix and re-stage:
 
 5. **Commit with a descriptive message**:
 

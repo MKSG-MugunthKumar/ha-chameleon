@@ -436,7 +436,7 @@ Quick start:
 
 1. Fork the repository
 2. Create a feature branch
-3. Run `make check` before submitting
+3. Commit — pre-commit hooks run lint, format, and type checks automatically
 4. Submit a pull request
 
 ---
