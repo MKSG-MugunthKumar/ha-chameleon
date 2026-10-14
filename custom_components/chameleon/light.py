@@ -529,31 +529,64 @@ class ChameleonLight(LightEntity):
             _LOGGER.error(self._last_error)
             return
 
-        # Stop any running animation before re-applying. The animated path will
-        # start a new one; the static path stays stopped.
+        animated = self._uses_animation()
+        colors = await self._extract_palette(image_path, animated)
+        if not colors:
+            self._last_error = f"Failed to extract colors from scene: {effect}"
+            _LOGGER.error(self._last_error)
+            return
+
+        result = await self._apply_palette(colors, animated)
+        self._record_effect_result(effect, effect, result, animated)
+
+    def _uses_animation(self) -> bool:
+        """Return True when the runtime transition calls for the animation loop."""
+        return self._get_runtime_transition() > 0
+
+    async def _extract_palette(self, source: Path | bytes, animated: bool) -> list[RGBColor]:
+        """Extract the palette an apply path needs from an image file or bytes.
+
+        Animated: a fixed ``DEFAULT_COLOR_COUNT`` palette feeds the gradient.
+        Static: one color per light - the dominant color for a single light,
+        otherwise at least one palette entry per light.
+        """
+        if animated:
+            return await extract_color_palette(self.hass, source, color_count=DEFAULT_COLOR_COUNT)
+        if len(self._light_entities) == 1:
+            color = await extract_dominant_color(self.hass, source)
+            return [color] if color else []
+        return await extract_color_palette(
+            self.hass,
+            source,
+            color_count=max(len(self._light_entities), DEFAULT_COLOR_COUNT),
+        )
+
+    async def _apply_palette(self, colors: list[RGBColor], animated: bool) -> ApplyColorsResult:
+        """Stop any running animation, then push a palette statically or animated."""
         manager = self._get_animation_manager()
         if manager:
             await manager.stop(self._entry.entry_id)
+        if animated:
+            return await self._apply_colors_animated(colors, self._brightness_pct)
+        return await self._apply_colors_static(colors, self._brightness_pct)
 
-        transition = self._get_runtime_transition()
-        brightness = self._brightness_pct
+    def _record_effect_result(self, effect: str, label: str, result: ApplyColorsResult, animated: bool) -> None:
+        """Record the outcome of applying an effect's palette.
 
-        if transition > 0:
-            result = await self._apply_colors_animated(image_path, brightness)
-        else:
-            result = await self._apply_colors_static(image_path, brightness)
-
+        ``effect`` is what ``_effect``/``_last_effect`` store (a scene name or
+        an internal marker); ``label`` is the human-readable name for logs.
+        """
         if result.all_succeeded:
             self._effect = effect
             self._last_effect = effect
             self._applied_colors = result.applied_colors
             self._last_scene_change = datetime.now()
-            verb = "animation started" if transition > 0 else "applied"
-            _LOGGER.info("Scene '%s' %s successfully", effect, verb)
+            verb = "animation started" if animated else "applied"
+            _LOGGER.info("Scene '%s' %s successfully", label, verb)
         elif result.all_failed:
             self._last_error = "Failed to apply colors to any lights"
             self._failed_lights = result.failed_lights
-            _LOGGER.error("Scene '%s' failed for all %d lights", effect, result.failed_count)
+            _LOGGER.error("Scene '%s' failed for all %d lights", label, result.failed_count)
         else:
             self._effect = effect
             self._last_effect = effect
@@ -563,7 +596,7 @@ class ChameleonLight(LightEntity):
             self._last_error = f"Partial failure: {result.failed_count}/{len(result.results)} lights failed"
             _LOGGER.warning(
                 "Scene '%s' partially applied: %d/%d lights succeeded",
-                effect,
+                label,
                 result.succeeded_count,
                 len(result.results),
             )
@@ -597,39 +630,14 @@ class ChameleonLight(LightEntity):
             self._last_scene_change = datetime.now()
             self._last_error = f"Partial failure: {result.failed_count}/{len(result.results)} lights failed"
 
-    async def _apply_colors_static(self, image_path: Path, brightness: int) -> ApplyColorsResult:
-        """Extract and apply colors statically (no animation loop)."""
-        num_lights = len(self._light_entities)
-
-        if num_lights == 1:
-            color = await extract_dominant_color(self.hass, image_path)
-            if color:
-                self._extracted_palette = [color]
-                return await self._light_controller.apply_colors_to_lights(
-                    {self._light_entities[0]: color},
-                    brightness=brightness,
-                )
-            _LOGGER.error("Failed to extract dominant color from %s", image_path)
-            return ApplyColorsResult()
-
-        colors = await extract_color_palette(
-            self.hass,
-            image_path,
-            color_count=max(num_lights, DEFAULT_COLOR_COUNT),
-        )
-        if not colors:
-            _LOGGER.error("Failed to extract color palette from %s", image_path)
-            return ApplyColorsResult()
-
+    async def _apply_colors_static(self, colors: list[RGBColor], brightness: int) -> ApplyColorsResult:
+        """Apply a palette statically: palette color by light index, no loop."""
         self._extracted_palette = colors
         light_colors = {entity: colors[i % len(colors)] for i, entity in enumerate(self._light_entities)}
-        return await self._light_controller.apply_colors_to_lights(
-            light_colors,
-            brightness=brightness,
-        )
+        return await self._light_controller.apply_colors_to_lights(light_colors, brightness=brightness)
 
-    async def _apply_colors_animated(self, image_path: Path, brightness: int) -> ApplyColorsResult:
-        """Extract colors and start an animation across the configured lights."""
+    async def _apply_colors_animated(self, colors: list[RGBColor], brightness: int) -> ApplyColorsResult:
+        """Start an animation across the configured lights from a palette."""
         manager = self._get_animation_manager()
         if not manager:
             _LOGGER.error("AnimationManager not available")
@@ -637,15 +645,6 @@ class ChameleonLight(LightEntity):
 
         transition = self._get_runtime_transition()
         style = self._get_runtime_transition_style()
-
-        colors = await extract_color_palette(
-            self.hass,
-            image_path,
-            color_count=DEFAULT_COLOR_COUNT,
-        )
-        if not colors:
-            _LOGGER.error("Failed to extract color palette from %s", image_path)
-            return ApplyColorsResult()
 
         self._extracted_palette = colors
         gradient = generate_gradient_path(colors, steps_between=10)
