@@ -18,6 +18,10 @@ Setters:
 - ``turn_on()`` (bare) → restore the last applied scene; if none, apply
   ``Random``.
 - ``turn_off()`` → stop any animation; turn off all underlying lights.
+
+Availability follows HA's light group: the Chameleon light is available while
+at least one member light is reachable, so a room whose mains is off shows as
+unavailable. ``unavailable_lights`` names the members that are offline.
 """
 
 from __future__ import annotations
@@ -39,8 +43,9 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .color_extractor import (
     RGBColor,
@@ -63,7 +68,7 @@ from .const import (
     SUPPORTED_EXTENSIONS,
 )
 from .helpers import get_chameleon_device_name, get_entity_base_name
-from .light_controller import ApplyColorsResult, LightController, LightResult
+from .light_controller import ApplyColorsResult, LightController, LightResult, is_light_reachable
 
 if TYPE_CHECKING:
     from .animations import AnimationManager
@@ -173,12 +178,30 @@ class ChameleonLight(LightEntity):
     def _get_runtime_transition_style(self) -> str:
         return _entry_data(self.hass, self._entry.entry_id).get("transition_style", DEFAULT_TRANSITION_STYLE)
 
+    def _unreachable_members(self) -> list[str]:
+        """Return member lights that can't take commands right now."""
+        return [entity_id for entity_id in self._light_entities if not is_light_reachable(self.hass.states.get(entity_id))]
+
+    def _static_color_for(self, entity_id: str) -> RGBColor | None:
+        """Return the color a member should show under the current static state.
+
+        Mirrors the mapping in ``_apply_colors_static`` (palette color by member
+        index) and ``_apply_manual_color``. None when nothing static is active.
+        """
+        if self._manual_color is not None:
+            return self._manual_color
+        if self._effect is None or not self._extracted_palette:
+            return None
+        index = self._light_entities.index(entity_id)
+        return self._extracted_palette[index % len(self._extracted_palette)]
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def async_added_to_hass(self) -> None:
         """Register self for service handler discovery and run initial scan."""
         await super().async_added_to_hass()
         _entry_data(self.hass, self._entry.entry_id)["chameleon_light"] = self
+        self.async_on_remove(async_track_state_change_event(self.hass, self._light_entities, self._async_member_state_changed))
         await self.async_refresh_options()
 
     async def async_will_remove_from_hass(self) -> None:
@@ -204,6 +227,16 @@ class ChameleonLight(LightEntity):
             "manufacturer": "Chameleon",
             "model": "Scene Selector",
         }
+
+    @property
+    def available(self) -> bool:
+        """Return True while at least one member light is reachable.
+
+        Same rule as HA's light group: one dead bulb shouldn't take away
+        control of the rest, but when every member is gone (mains off) the
+        facade goes unavailable too. Derived on read, never stored.
+        """
+        return len(self._unreachable_members()) < len(self._light_entities)
 
     @property
     def is_on(self) -> bool:
@@ -248,6 +281,7 @@ class ChameleonLight(LightEntity):
             "light_count": len(self._light_entities),
             "applied_colors": self._applied_colors,
             "is_animating": manager.is_running(self._entry.entry_id) if manager else False,
+            "unavailable_lights": self._unreachable_members(),
         }
 
         if self._extracted_palette:
@@ -386,6 +420,61 @@ class ChameleonLight(LightEntity):
                 )
             except Exception as e:
                 _LOGGER.error("Failed to update brightness on %s: %s", light_entity, e)
+
+    # ── Member light availability ────────────────────────────────────────
+
+    @callback
+    def _async_member_state_changed(self, event: Event[EventStateChangedData]) -> None:
+        """React when a member light becomes reachable or unreachable.
+
+        Members change state on every animation tick, so anything that isn't a
+        reachability flip is ignored - writing our state on each tick would
+        flood the recorder.
+        """
+        entity_id = event.data["entity_id"]
+        old_state = event.data["old_state"]
+        new_state = event.data["new_state"]
+        was_reachable = is_light_reachable(old_state)
+        now_reachable = is_light_reachable(new_state)
+        if was_reachable == now_reachable:
+            return
+
+        # old_state is None when the member first appears (startup ordering);
+        # that isn't an outage or a recovery worth logging.
+        if old_state is not None:
+            if now_reachable:
+                _LOGGER.info("Member light %s is reachable again", entity_id)
+            else:
+                _LOGGER.info("Member light %s is %s", entity_id, new_state.state if new_state else "gone")
+
+        if now_reachable:
+            self._entry.async_create_task(self.hass, self._async_restore_member(entity_id))
+        self.async_write_ha_state()
+
+    async def _async_restore_member(self, entity_id: str) -> None:
+        """Push the current static color to a member light that just came back.
+
+        Animated scenes need nothing here: the loop polls reachability and picks
+        the light up on its next beat. Static scenes and manual colors have no
+        loop, so without this the bulb keeps its power-on color (typically warm
+        white after a mains cut). Runs under the lock so it can't race a
+        turn_off and relight a lamp the user just switched off.
+        """
+        async with self._lock:
+            if not self._is_on:
+                return
+            manager = self._get_animation_manager()
+            if manager and manager.is_running(self._entry.entry_id):
+                return
+            color = self._static_color_for(entity_id)
+            if color is None:
+                return
+
+            result = await self._light_controller.apply_color_to_light(entity_id, color, brightness=self._brightness_pct)
+            if result.success:
+                self._applied_colors = {**self._applied_colors, entity_id: color}
+                self._failed_lights = {k: v for k, v in self._failed_lights.items() if k != entity_id}
+                self.async_write_ha_state()
 
     # ── Public API for sibling entities ──────────────────────────────────
 
@@ -561,7 +650,9 @@ class ChameleonLight(LightEntity):
         self._extracted_palette = colors
         gradient = generate_gradient_path(colors, steps_between=10)
 
-        # Pre-flight availability so we don't animate dead lights.
+        # Pre-flight availability for result reporting. The loop itself gets
+        # every member: it skips unreachable ones per tick, so a light that was
+        # off when the scene started joins in once it comes back.
         results: list[LightResult] = []
         available_lights: list[str] = []
         for light_entity in self._light_entities:
@@ -588,7 +679,7 @@ class ChameleonLight(LightEntity):
         if available_lights:
             await manager.start(
                 self._entry.entry_id,
-                available_lights,
+                self._light_entities,
                 gradient,
                 transition=transition,
                 style=style,

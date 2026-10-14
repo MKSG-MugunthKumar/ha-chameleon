@@ -30,7 +30,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 
 from .color_extractor import RGBColor
 from .const import STATIC_TRANSITION_TIME
@@ -100,6 +100,17 @@ class ApplyColorsResult:
         return {r.entity_id: r.error_message or str(r.error) for r in self.results if not r.success}
 
 
+def is_light_reachable(state: State | None) -> bool:
+    """Return True if a member light's state means it can take commands.
+
+    ``unknown`` counts as unreachable alongside ``unavailable``: it is what a
+    light reports before its integration has heard from it (e.g. just after a
+    restart). Shared by the animation loop, the Chameleon light's availability,
+    and :meth:`LightController.check_light_availability` so all three agree.
+    """
+    return state is not None and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN)
+
+
 class LightController:
     """Controller for applying colors to lights with proper error handling."""
 
@@ -140,7 +151,7 @@ class LightController:
                 f"Light entity '{entity_id}' does not exist",
             )
 
-        if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        if not is_light_reachable(state):
             return (
                 False,
                 LightError.UNAVAILABLE,

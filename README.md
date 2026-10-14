@@ -163,6 +163,7 @@ The light entity exposes useful attributes for templates and dashboards:
 | `is_animating`        | Whether animation is currently running                                                                                                                                                                     |
 | `last_error`          | Error message if last operation failed (cleared on success)                                                                                                                                                |
 | `failed_lights`       | Dict of failed lights with error messages                                                                                                                                                                  |
+| `unavailable_lights`  | Member lights that are currently unreachable (`unavailable`/`unknown`). The Chameleon light itself goes unavailable only when every member is listed here, e.g. the room's mains is off.                   |
 
 ### Service Actions
 
@@ -468,6 +469,17 @@ Quick start:
 - [x] **Refresh scenes service** - `chameleon.refresh_scenes` rescans the image directory on demand (no polling)
 - [x] **Last scene timestamp** - For automation triggers
 - [x] **Semantic zero-value for speed** - Speed 0 = static (no animation loop). Removes the need for a separate on/off switch.
+- [x] **Reconfigure lights** - Settings → Devices & Services → Chameleon → Reconfigure adds or removes member lights in place, keeping entity IDs and customisations.
+
+### Member Light Availability (Next)
+
+Typical case: the mains for a room is switched off, so every member light drops off the network at once.
+
+- [ ] **Group-style availability** - `light.chameleon_*` goes unavailable only when _all_ member lights are unavailable (same rule as HA's `light.group`). Derived from member states via a state-change listener, not a stored flag.
+- [ ] **`unavailable_lights` attribute** - Lists which members are offline, so stock cards show what is going on.
+- [ ] **Skip offline lights in the animation loop** - No service calls to unavailable members; with all members offline the loop idles and resumes on its own.
+- [ ] **Re-apply on recovery** - When a member comes back, push its current scene color immediately (also covers static scenes, where no loop would otherwise correct the bulb's power-on color). Must take the per-entity lock so it can't race a `turn_off`.
+- [ ] **Log once per transition** - One info line when a member drops out and one when it returns, replacing per-tick warnings (HA `log-when-unavailable` rule).
 
 ### Media Player Integration
 

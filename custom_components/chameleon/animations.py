@@ -9,6 +9,10 @@ Staggered style applies a one-time random phase offset at the start of each
 light's loop so members of a group desync from each other; subsequent ticks
 run at the same ``transition`` cadence with that offset preserved.
 
+Unreachable member lights (e.g. a room's mains switched off) sit out their
+ticks without service calls but keep their place in the color cycle, so they
+rejoin in step with their peers as soon as they come back.
+
 Transition of 0 disables animation entirely; the caller (number entity) is
 expected to stop the controller before setting transition=0, so the loop is
 defensive but should not normally see transition<=0 while running.
@@ -25,6 +29,7 @@ from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATTR
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_ON
 
 from .const import DEFAULT_TRANSITION_STYLE, TRANSITION_STYLE_SYNC
+from .light_controller import is_light_reachable
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -32,6 +37,10 @@ if TYPE_CHECKING:
     from .color_extractor import RGBColor
 
 _LOGGER = logging.getLogger(__name__)
+
+# How often an unreachable light re-checks its state during a tick. Reading
+# hass.states is in-memory, so this is cheap; it bounds recovery latency.
+_UNREACHABLE_POLL_SECONDS = 1.0
 
 
 class AnimationController:
@@ -163,17 +172,36 @@ class AnimationController:
                     continue
 
                 color = self.colors[color_index % len(self.colors)]
-                await self._apply_color(light_entity, color, transition=transition)
+                if is_light_reachable(self.hass.states.get(light_entity)):
+                    await self._apply_color(light_entity, color, transition=transition)
+                    # Wait for the fade to complete before targeting the next color.
+                    await asyncio.sleep(transition)
+                else:
+                    await self._sit_out_tick(light_entity, color, transition)
                 color_index = (color_index + 1) % len(self.colors)
-
-                # Wait for the fade to complete before targeting the next color.
-                await asyncio.sleep(transition)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 _LOGGER.error("Animation error for %s: %s", light_entity, e)
                 await asyncio.sleep(1)
+
+    async def _sit_out_tick(self, light_entity: str, color: RGBColor, transition: float) -> None:
+        """Spend one tick waiting on an unreachable light without calling it.
+
+        HA would reject (and log) a service call to an unavailable entity on
+        every tick. Instead poll its state in short slices. If it comes back
+        mid-tick, send this tick's color faded over the time left, so it lands
+        on the same beat as its peers rather than a full tick late.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + transition
+        while (remaining := deadline - loop.time()) > 0:
+            if is_light_reachable(self.hass.states.get(light_entity)):
+                await self._apply_color(light_entity, color, transition=remaining)
+                await asyncio.sleep(max(0.0, deadline - loop.time()))
+                return
+            await asyncio.sleep(min(_UNREACHABLE_POLL_SECONDS, remaining))
 
     async def _apply_color(self, light_entity: str, color: RGBColor, transition: float) -> None:
         """Send a turn_on with the given color, brightness, and fade duration."""

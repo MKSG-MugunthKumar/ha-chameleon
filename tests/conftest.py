@@ -160,6 +160,35 @@ def _setup_homeassistant_mocks():
 
     mock_ha_components_select.SelectEntity = SelectEntity
 
+    # LightEntity mock - a real class so ChameleonLight can subclass it
+    class LightEntity:
+        """Mock LightEntity base class."""
+
+        _attr_has_entity_name = False
+        _attr_unique_id = None
+        entity_id = None
+        hass = None
+
+        async def async_added_to_hass(self):
+            pass
+
+        async def async_will_remove_from_hass(self):
+            pass
+
+        def async_write_ha_state(self):
+            pass
+
+        def async_on_remove(self, func):
+            pass
+
+    class LightEntityFeature:
+        EFFECT = 4
+
+    mock_ha_components_light.LightEntity = LightEntity
+    mock_ha_components_light.LightEntityFeature = LightEntityFeature
+    mock_ha_components_light.ATTR_BRIGHTNESS = "brightness"
+    mock_ha_components_light.ATTR_EFFECT = "effect"
+
     # Selector classes (not mocks - need to be real classes with voluptuous support)
     class EntitySelectorConfig:
         def __init__(self, **kwargs):
