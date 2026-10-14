@@ -73,10 +73,11 @@ to stop.
   grace timer.
 - Fall back = apply the pre-Now-Playing effect (or `Random`) through the normal `_apply_effect`
   path, with the tracker stopped first.
-- The fallback target lives in `_fallback_effect`. On entering Now Playing it is set to the
-  current `_effect` **only if** that is a scene or `Random`; otherwise (entering from off via
-  bare `turn_on`, or from a manual colour) it keeps its previous value. `None` means `Random`.
-  This prevents re-entry through bare `turn_on` from making Now Playing its own fallback.
+- The fallback target lives in `_fallback_effect`. On entering Now Playing the candidate is the
+  current `_effect`, or `_last_effect` when the light is off. It is stored only if it is a scene
+  or `Random` (not the Now Playing marker); otherwise the previous value is kept. `None` means
+  `Random`. This prevents re-entry (bare `turn_on`, transition slider crossing zero) from making
+  Now Playing its own fallback.
 - Bare `turn_on` after `turn_off` restores `_last_effect`; if that is the Now Playing marker,
   enter Now Playing again (step 3/4 above).
 

@@ -96,6 +96,32 @@ Use the select entity in:
 - Scripts
 - Voice assistants
 
+### Now Playing (album art)
+
+Link a media player to a Chameleon light during setup, or later via **Settings → Devices &
+Services → Chameleon → ⋮ → Reconfigure**. Pick the player in the same room: in a multi-room
+setup each Chameleon follows its own room.
+
+The light then lists a `Now Playing - <player name>` effect. Pick it from any light card:
+
+- The lights take their colours from the current album cover, using your transition and
+  transition style like any scene.
+- A new album repaints the lights; tracks from the same album don't.
+- Pausing keeps the colours. When the player goes idle or off for 30 seconds, the light returns
+  to the scene it showed before (Random if none).
+- Picking another effect, a colour, or turning the light off stops following the player.
+
+```yaml
+action: light.turn_on
+target:
+  entity_id: light.chameleon_lounge
+data:
+  effect: "Now Playing - Lounge"
+```
+
+The effect name follows the player's friendly name; automations that name it need updating if
+you rename the player.
+
 ### Example Dashboard Card
 
 Chameleon exposes a single **light entity** (`light.chameleon_*`) that drops into any standard HA light card — Tile, Mushroom Light, Bubble Card, etc. The light's effect dropdown is the scene picker, brightness is native, and the color preview reflects the active scene's dominant color.
@@ -164,6 +190,8 @@ The light entity exposes useful attributes for templates and dashboards:
 | `last_error`          | Error message if last operation failed (cleared on success)                                                                                                                                                |
 | `failed_lights`       | Dict of failed lights with error messages                                                                                                                                                                  |
 | `unavailable_lights`  | Member lights that are currently unreachable (`unavailable`/`unknown`). The Chameleon light itself goes unavailable only when every member is listed here, e.g. the room's mains is off.                   |
+| `media_player`        | Linked media player entity ID (only when one is configured)                                                                                                                                                |
+| `now_playing`         | `Artist - Title` while following the music                                                                                                                                                                 |
 
 ### Service Actions
 
@@ -483,10 +511,10 @@ Typical case: the mains for a room is switched off, so every member light drops 
 
 ### Media Player Integration
 
-- [ ] **Album art color extraction** - Extract colors from media player's currently playing album cover
-- [ ] **Media player selector** - Allow users to configure a media player entity as color source
-- [ ] **Auto-update on track change** - Automatically update lights when song changes
-- [ ] **Fallback to static scene** - Use configured scene when media player is idle/off
+- [x] **Album art color extraction** - `Now Playing - <player>` effect colors the lights from the linked player's current cover
+- [x] **Media player selector** - Optional media player per Chameleon entry (setup or Reconfigure); one room, one player
+- [x] **Auto-update on track change** - Repaints when the cover changes (once per album, not per track)
+- [x] **Fallback to static scene** - Pause holds; idle/off for 30 s returns to the scene active before
 
 ### Animation Features
 
