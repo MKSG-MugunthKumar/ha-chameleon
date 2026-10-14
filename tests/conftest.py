@@ -26,6 +26,8 @@ def _setup_homeassistant_mocks():
     mock_ha_helpers_selector = MagicMock()
     mock_ha_helpers_cv = MagicMock()
     mock_ha_components_select = MagicMock()
+    mock_ha_components_media_player = MagicMock()
+    mock_ha_components_media_player.DOMAIN = "media_player"
 
     # Define ColorMode enum-like values
     class ColorMode:
@@ -50,6 +52,8 @@ def _setup_homeassistant_mocks():
     mock_ha_const.STATE_UNAVAILABLE = "unavailable"
     mock_ha_const.STATE_UNKNOWN = "unknown"
     mock_ha_const.ATTR_ENTITY_ID = "entity_id"
+    mock_ha_const.STATE_PLAYING = "playing"
+    mock_ha_const.STATE_PAUSED = "paused"
 
     # Create State class
     class State:
@@ -246,6 +250,7 @@ def _setup_homeassistant_mocks():
     sys.modules["homeassistant.components"] = mock_ha_components
     sys.modules["homeassistant.components.light"] = mock_ha_components_light
     sys.modules["homeassistant.components.select"] = mock_ha_components_select
+    sys.modules["homeassistant.components.media_player"] = mock_ha_components_media_player
     sys.modules["homeassistant.config_entries"] = mock_ha_config_entries
     sys.modules["homeassistant.data_entry_flow"] = mock_ha_data_entry_flow
     sys.modules["homeassistant.helpers"] = mock_ha_helpers
