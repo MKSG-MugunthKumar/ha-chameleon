@@ -6,21 +6,25 @@
         "description": "Set up Chameleon to apply image colors to your lights. Select multiple lights to distribute colors from the image palette across them.",
         "data": {
           "light_entities": "Light Entities",
-          "transition": "Transition"
+          "transition": "Transition",
+          "media_player": "Media Player"
         },
         "data_description": {
           "light_entities": "The RGB lights to control with scene colors. Each light will receive a unique color from the image palette.",
-          "transition": "Fade duration in seconds between colors. Set to 0 to disable animation (static scenes only)."
+          "transition": "Fade duration in seconds between colors. Set to 0 to disable animation (static scenes only).",
+          "media_player": "Optional. Adds a \"Now Playing\" effect that colors these lights from this player's album art. Pick the player in the same room."
         }
       },
       "reconfigure": {
         "title": "Change Chameleon lights",
         "description": "Add or remove the lights this Chameleon instance controls. The Chameleon light, its transition controls, and any customisations are kept.",
         "data": {
-          "light_entities": "Light Entities"
+          "light_entities": "Light Entities",
+          "media_player": "Media Player"
         },
         "data_description": {
-          "light_entities": "The RGB lights to control with scene colors. Each light will receive a unique color from the image palette."
+          "light_entities": "The RGB lights to control with scene colors. Each light will receive a unique color from the image palette.",
+          "media_player": "Optional. Adds a \"Now Playing\" effect that colors these lights from this player's album art. Pick the player in the same room."
         }
       }
     },

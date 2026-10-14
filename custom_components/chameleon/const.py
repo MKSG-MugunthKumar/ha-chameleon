@@ -19,6 +19,7 @@ SUPPORTED_EXTENSIONS: Final = (".jpg", ".jpeg", ".png")
 CONF_LIGHT_ENTITY: Final = "light_entity"  # Deprecated, kept for migration
 CONF_LIGHT_ENTITIES: Final = "light_entities"  # New: list of light entities
 CONF_TRANSITION: Final = "transition"
+CONF_MEDIA_PLAYER: Final = "media_player"  # Optional: player whose album art drives "Now Playing"
 
 # Platforms. Light is the primary entity; select hosts the transition style picker;
 # number hosts the transition slider. No switch (animation on/off is transition=0)

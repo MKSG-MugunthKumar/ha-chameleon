@@ -9,6 +9,7 @@ import pytest
 from custom_components.chameleon.const import (
     CONF_LIGHT_ENTITIES,
     CONF_LIGHT_ENTITY,
+    CONF_MEDIA_PLAYER,
     CONF_TRANSITION,
 )
 
@@ -106,6 +107,24 @@ class TestChameleonConfigFlow:
 
         flow.async_set_unique_id.assert_awaited_once_with("light.one_light.two")
 
+    @pytest.mark.asyncio
+    async def test_create_entry_with_media_player(self, hass: MagicMock):
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        flow = ChameleonConfigFlow()
+        _setup_config_flow(flow, hass)
+
+        with patch(TITLE_PATCH, return_value="Lounge"):
+            result = await flow.async_step_user(
+                user_input={
+                    CONF_LIGHT_ENTITIES: ["light.one"],
+                    CONF_TRANSITION: 5,
+                    CONF_MEDIA_PLAYER: "media_player.lounge",
+                }
+            )
+
+        assert result["data"][CONF_MEDIA_PLAYER] == "media_player.lounge"
+
 
 class TestChameleonReconfigureFlow:
     """Tests for the reconfigure step (add/remove member lights)."""
@@ -124,7 +143,7 @@ class TestChameleonReconfigureFlow:
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "reconfigure"
         assert result["errors"] == {}
-        assert flow.suggested_values == {CONF_LIGHT_ENTITIES: ["light.one", "light.two"]}
+        assert flow.suggested_values == {CONF_LIGHT_ENTITIES: ["light.one", "light.two"], CONF_MEDIA_PLAYER: None}
 
     @pytest.mark.asyncio
     async def test_form_prefilled_from_legacy_single_light(self, hass: MagicMock):
@@ -137,7 +156,7 @@ class TestChameleonReconfigureFlow:
 
         await flow.async_step_reconfigure()
 
-        assert flow.suggested_values == {CONF_LIGHT_ENTITIES: ["light.old"]}
+        assert flow.suggested_values == {CONF_LIGHT_ENTITIES: ["light.old"], CONF_MEDIA_PLAYER: None}
 
     @pytest.mark.asyncio
     async def test_membership_change_updates_entry_in_place(self, hass: MagicMock):
@@ -157,7 +176,7 @@ class TestChameleonReconfigureFlow:
         assert result["updates"] == {
             "unique_id": "light.one_light.three",
             "title": "Office",
-            "data_updates": {CONF_LIGHT_ENTITIES: ["light.three", "light.one"]},
+            "data_updates": {CONF_LIGHT_ENTITIES: ["light.three", "light.one"], CONF_MEDIA_PLAYER: None},
         }
         title.assert_called_once_with(hass, ["light.three", "light.one"])
 
@@ -194,6 +213,34 @@ class TestChameleonReconfigureFlow:
         assert result["errors"] == {"base": "already_configured"}
         # The user's selection is kept on the re-shown form, not reset
         assert flow.suggested_values == submitted
+
+    @pytest.mark.asyncio
+    async def test_prefills_existing_media_player(self, hass: MagicMock):
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        entry = _mock_entry("abc", {CONF_LIGHT_ENTITIES: ["light.one"], CONF_MEDIA_PLAYER: "media_player.lounge"})
+        flow = ChameleonConfigFlow()
+        _setup_reconfigure_flow(flow, hass, entry)
+
+        await flow.async_step_reconfigure()
+
+        assert flow.suggested_values[CONF_MEDIA_PLAYER] == "media_player.lounge"
+
+    @pytest.mark.asyncio
+    async def test_set_and_clear_media_player(self, hass: MagicMock):
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        entry = _mock_entry("abc", {CONF_LIGHT_ENTITIES: ["light.one"], CONF_MEDIA_PLAYER: "media_player.lounge"}, "light.one")
+        flow = ChameleonConfigFlow()
+        _setup_reconfigure_flow(flow, hass, entry)
+
+        with patch(TITLE_PATCH, return_value="One"):
+            set_result = await flow.async_step_reconfigure(user_input={CONF_LIGHT_ENTITIES: ["light.one"], CONF_MEDIA_PLAYER: "media_player.kitchen"})
+            # A cleared optional selector is simply absent from user_input
+            clear_result = await flow.async_step_reconfigure(user_input={CONF_LIGHT_ENTITIES: ["light.one"]})
+
+        assert set_result["updates"]["data_updates"][CONF_MEDIA_PLAYER] == "media_player.kitchen"
+        assert clear_result["updates"]["data_updates"][CONF_MEDIA_PLAYER] is None
 
 
 class TestLightFriendlyName:

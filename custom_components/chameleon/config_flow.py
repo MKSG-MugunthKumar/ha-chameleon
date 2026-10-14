@@ -17,6 +17,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_LIGHT_ENTITIES,
     CONF_LIGHT_ENTITY,
+    CONF_MEDIA_PLAYER,
     CONF_TRANSITION,
     DEFAULT_TRANSITION,
     DOMAIN,
@@ -67,6 +68,7 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
                         mode=NumberSelectorMode.SLIDER,
                     )
                 ),
+                vol.Optional(CONF_MEDIA_PLAYER): EntitySelector(EntitySelectorConfig(domain="media_player")),
             }
         )
 
@@ -103,12 +105,18 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
                     entry,
                     unique_id=unique_id,
                     title=get_entry_title(self.hass, light_entities),
-                    data_updates={CONF_LIGHT_ENTITIES: light_entities},
+                    data_updates={
+                        CONF_LIGHT_ENTITIES: light_entities,
+                        # A cleared optional selector is absent from user_input; store None
+                        CONF_MEDIA_PLAYER: user_input.get(CONF_MEDIA_PLAYER),
+                    },
                 )
 
         # Pre-v2 entries stored a single light under CONF_LIGHT_ENTITY
         current_lights: list[str] = entry.data.get(CONF_LIGHT_ENTITIES) or [entry.data[CONF_LIGHT_ENTITY]]
-        suggested = user_input if user_input is not None else {CONF_LIGHT_ENTITIES: current_lights}
+        suggested = (
+            user_input if user_input is not None else {CONF_LIGHT_ENTITIES: current_lights, CONF_MEDIA_PLAYER: entry.data.get(CONF_MEDIA_PLAYER)}
+        )
 
         data_schema = vol.Schema(
             {
@@ -118,6 +126,7 @@ class ChameleonConfigFlow(ConfigFlow, domain=DOMAIN):
                         multiple=True,
                     )
                 ),
+                vol.Optional(CONF_MEDIA_PLAYER): EntitySelector(EntitySelectorConfig(domain="media_player")),
             }
         )
 
