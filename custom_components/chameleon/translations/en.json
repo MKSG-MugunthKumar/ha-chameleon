@@ -12,13 +12,25 @@
           "light_entities": "The RGB lights to control with scene colors. Each light will receive a unique color from the image palette.",
           "transition": "Fade duration in seconds between colors. Set to 0 to disable animation (static scenes only)."
         }
+      },
+      "reconfigure": {
+        "title": "Change Chameleon lights",
+        "description": "Add or remove the lights this Chameleon instance controls. The Chameleon light, its transition controls, and any customisations are kept.",
+        "data": {
+          "light_entities": "Light Entities"
+        },
+        "data_description": {
+          "light_entities": "The RGB lights to control with scene colors. Each light will receive a unique color from the image palette."
+        }
       }
     },
     "abort": {
-      "already_configured": "These lights are already configured with Chameleon"
+      "already_configured": "These lights are already configured with Chameleon",
+      "reconfigure_successful": "Chameleon lights updated"
     },
     "error": {
-      "unknown": "Unexpected error occurred"
+      "unknown": "Unexpected error occurred",
+      "already_configured": "Another Chameleon entry already controls exactly these lights"
     }
   },
   "entity": {

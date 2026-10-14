@@ -112,6 +112,27 @@ def _setup_homeassistant_mocks():
                 "errors": errors or {},
             }
 
+        # Reconfigure support - tests set _reconfigure_entry / _current_entries
+        def _get_reconfigure_entry(self):
+            return self._reconfigure_entry
+
+        def _async_current_entries(self, include_ignore=True):
+            return self._current_entries
+
+        def add_suggested_values_to_schema(self, data_schema, suggested_values):
+            """Record suggested values so tests can assert the pre-fill."""
+            self.suggested_values = suggested_values
+            return data_schema
+
+        def async_update_reload_and_abort(self, entry, **kwargs):
+            """Return the updates instead of applying them."""
+            return {
+                "type": FlowResultType.ABORT,
+                "reason": "reconfigure_successful",
+                "entry": entry,
+                "updates": kwargs,
+            }
+
     # Also mock ConfigFlowResult as dict
     mock_ha_config_entries.ConfigFlowResult = dict
     mock_ha_config_entries.ConfigFlow = ConfigFlow

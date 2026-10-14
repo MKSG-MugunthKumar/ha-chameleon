@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.chameleon.const import (
     CONF_LIGHT_ENTITIES,
+    CONF_LIGHT_ENTITY,
     CONF_TRANSITION,
 )
 
@@ -29,6 +30,23 @@ def _setup_config_flow(flow, hass):
     # Make async methods return coroutines
     flow.async_set_unique_id = AsyncMock()
     flow._abort_if_unique_id_configured = MagicMock()
+
+
+def _mock_entry(entry_id: str, data: dict, unique_id: str | None = None) -> MagicMock:
+    """Build a config entry stand-in."""
+    entry = MagicMock()
+    entry.entry_id = entry_id
+    entry.data = data
+    entry.unique_id = unique_id
+    return entry
+
+
+def _setup_reconfigure_flow(flow, hass, entry, other_entries=()):
+    """Point the flow at an existing entry, with optional sibling entries."""
+    flow.hass = hass
+    flow.context = {"source": "reconfigure", "entry_id": entry.entry_id}
+    flow._reconfigure_entry = entry
+    flow._current_entries = [entry, *other_entries]
 
 
 class TestChameleonConfigFlow:
@@ -87,6 +105,95 @@ class TestChameleonConfigFlow:
             )
 
         flow.async_set_unique_id.assert_awaited_once_with("light.one_light.two")
+
+
+class TestChameleonReconfigureFlow:
+    """Tests for the reconfigure step (add/remove member lights)."""
+
+    @pytest.mark.asyncio
+    async def test_form_prefilled_with_current_lights(self, hass: MagicMock):
+        """The form opens pre-filled with the entry's current lights."""
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        entry = _mock_entry("abc", {CONF_LIGHT_ENTITIES: ["light.one", "light.two"], CONF_TRANSITION: 3})
+        flow = ChameleonConfigFlow()
+        _setup_reconfigure_flow(flow, hass, entry)
+
+        result = await flow.async_step_reconfigure()
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "reconfigure"
+        assert result["errors"] == {}
+        assert flow.suggested_values == {CONF_LIGHT_ENTITIES: ["light.one", "light.two"]}
+
+    @pytest.mark.asyncio
+    async def test_form_prefilled_from_legacy_single_light(self, hass: MagicMock):
+        """Pre-v2 entries stored one light under CONF_LIGHT_ENTITY."""
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        entry = _mock_entry("abc", {CONF_LIGHT_ENTITY: "light.old"})
+        flow = ChameleonConfigFlow()
+        _setup_reconfigure_flow(flow, hass, entry)
+
+        await flow.async_step_reconfigure()
+
+        assert flow.suggested_values == {CONF_LIGHT_ENTITIES: ["light.old"]}
+
+    @pytest.mark.asyncio
+    async def test_membership_change_updates_entry_in_place(self, hass: MagicMock):
+        """Submitting a new set updates unique_id, title, and lights on the same entry."""
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        entry = _mock_entry("abc", {CONF_LIGHT_ENTITIES: ["light.one", "light.two"]}, "light.one_light.two")
+        flow = ChameleonConfigFlow()
+        _setup_reconfigure_flow(flow, hass, entry)
+
+        with patch(TITLE_PATCH, return_value="Office") as title:
+            result = await flow.async_step_reconfigure(user_input={CONF_LIGHT_ENTITIES: ["light.three", "light.one"]})
+
+        assert result["type"] == FlowResultType.ABORT
+        assert result["reason"] == "reconfigure_successful"
+        assert result["entry"] is entry
+        assert result["updates"] == {
+            "unique_id": "light.one_light.three",
+            "title": "Office",
+            "data_updates": {CONF_LIGHT_ENTITIES: ["light.three", "light.one"]},
+        }
+        title.assert_called_once_with(hass, ["light.three", "light.one"])
+
+    @pytest.mark.asyncio
+    async def test_resubmitting_same_lights_is_allowed(self, hass: MagicMock):
+        """The entry's own unique_id is not a collision."""
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        entry = _mock_entry("abc", {CONF_LIGHT_ENTITIES: ["light.one"]}, "light.one")
+        flow = ChameleonConfigFlow()
+        _setup_reconfigure_flow(flow, hass, entry)
+
+        with patch(TITLE_PATCH, return_value="One"):
+            result = await flow.async_step_reconfigure(user_input={CONF_LIGHT_ENTITIES: ["light.one"]})
+
+        assert result["type"] == FlowResultType.ABORT
+        assert result["reason"] == "reconfigure_successful"
+
+    @pytest.mark.asyncio
+    async def test_collision_with_other_entry_shows_error(self, hass: MagicMock):
+        """Another entry already controlling the exact same lights blocks the change."""
+        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+
+        entry = _mock_entry("abc", {CONF_LIGHT_ENTITIES: ["light.one"]}, "light.one")
+        other = _mock_entry("xyz", {CONF_LIGHT_ENTITIES: ["light.two", "light.three"]}, "light.three_light.two")
+        flow = ChameleonConfigFlow()
+        _setup_reconfigure_flow(flow, hass, entry, [other])
+
+        submitted = {CONF_LIGHT_ENTITIES: ["light.two", "light.three"]}
+        result = await flow.async_step_reconfigure(user_input=submitted)
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "reconfigure"
+        assert result["errors"] == {"base": "already_configured"}
+        # The user's selection is kept on the re-shown form, not reset
+        assert flow.suggested_values == submitted
 
 
 class TestLightFriendlyName:
