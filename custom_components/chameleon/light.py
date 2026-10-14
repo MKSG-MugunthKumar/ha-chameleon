@@ -18,6 +18,9 @@ Setters:
 - ``turn_on()`` (bare) → restore the last applied scene; if none, apply
   ``Random``.
 - ``turn_off()`` → stop any animation; turn off all underlying lights.
+- ``turn_on(effect="Now Playing - <player>")`` → follow the linked media
+  player's album art (only when a player is configured). Pause holds; idle/off
+  for 30 s falls back to the scene active before.
 
 Availability follows HA's light group: the Chameleon light is available while
 at least one member light is reachable, so a room whose mains is off shows as
@@ -56,6 +59,7 @@ from .color_extractor import (
 from .const import (
     CONF_LIGHT_ENTITIES,
     CONF_LIGHT_ENTITY,
+    CONF_MEDIA_PLAYER,
     CONF_TRANSITION,
     DEFAULT_BRIGHTNESS,
     DEFAULT_COLOR_COUNT,
@@ -63,12 +67,15 @@ from .const import (
     DEFAULT_TRANSITION_STYLE,
     DOMAIN,
     IMAGE_DIRECTORY,
+    NOW_PLAYING_EFFECT,
+    NOW_PLAYING_PREFIX,
     SCENE_OFF,
     SCENE_RANDOM,
     SUPPORTED_EXTENSIONS,
 )
-from .helpers import get_chameleon_device_name, get_entity_base_name
+from .helpers import get_chameleon_device_name, get_entity_base_name, get_friendly_name
 from .light_controller import ApplyColorsResult, LightController, LightResult, is_light_reachable
+from .now_playing import NowPlayingTracker
 
 if TYPE_CHECKING:
     from .animations import AnimationManager
@@ -93,7 +100,7 @@ async def async_setup_entry(
     initial_transition = entry.data.get(CONF_TRANSITION, DEFAULT_TRANSITION)
 
     async_add_entities(
-        [ChameleonLight(hass, entry, light_entities, initial_transition)],
+        [ChameleonLight(hass, entry, light_entities, initial_transition, media_player=entry.data.get(CONF_MEDIA_PLAYER))],
         True,
     )
 
@@ -129,6 +136,7 @@ class ChameleonLight(LightEntity):
         entry: ConfigEntry,
         light_entities: list[str],
         initial_transition: float,
+        media_player: str | None = None,
     ) -> None:
         """Initialize the Chameleon light entity."""
         self.hass = hass
@@ -143,6 +151,12 @@ class ChameleonLight(LightEntity):
         self._effect: str | None = None
         self._last_effect: str | None = None  # restored on bare turn_on
         self._manual_color: RGBColor | None = None  # set when user picks raw color
+
+        # Now Playing (optional): follow a media player's album art.
+        self._media_player = media_player
+        self._now_playing = NowPlayingTracker(hass, media_player) if media_player else None
+        self._fallback_effect: str | None = None  # scene to return to when playback ends
+        self._latest_cover_key: str | None = None  # newest cover seen; older pending work is dropped
 
         # Diagnostics / palette
         self._extracted_palette: list[RGBColor] = []
@@ -195,6 +209,18 @@ class ChameleonLight(LightEntity):
         index = self._light_entities.index(entity_id)
         return self._extracted_palette[index % len(self._extracted_palette)]
 
+    def _now_playing_name(self) -> str | None:
+        """Return the Now Playing effect's display name, or None without a player."""
+        if self._media_player is None:
+            return None
+        return f"{NOW_PLAYING_PREFIX} - {get_friendly_name(self.hass, self._media_player)}"
+
+    def _stop_now_playing(self) -> None:
+        """Stop following the media player (no-op when not following)."""
+        if self._now_playing is not None:
+            self._now_playing.stop()
+        self._latest_cover_key = None
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def async_added_to_hass(self) -> None:
@@ -202,11 +228,14 @@ class ChameleonLight(LightEntity):
         await super().async_added_to_hass()
         _entry_data(self.hass, self._entry.entry_id)["chameleon_light"] = self
         self.async_on_remove(async_track_state_change_event(self.hass, self._light_entities, self._async_member_state_changed))
+        if self._media_player is not None:
+            self.async_on_remove(async_track_state_change_event(self.hass, [self._media_player], self._async_media_player_changed))
         await self.async_refresh_options()
 
     async def async_will_remove_from_hass(self) -> None:
         """Stop any animation and clear our registration."""
         await super().async_will_remove_from_hass()
+        self._stop_now_playing()
 
         manager = self._get_animation_manager()
         if manager:
@@ -260,6 +289,8 @@ class ChameleonLight(LightEntity):
     @property
     def effect(self) -> str | None:
         """Return the currently active effect, or None when in manual-color mode."""
+        if self._effect == NOW_PLAYING_EFFECT:
+            return self._now_playing_name()
         return self._effect
 
     @property
@@ -268,9 +299,11 @@ class ChameleonLight(LightEntity):
 
         ``Off`` is intentionally excluded — that's expressed via ``turn_off()``.
         ``Random`` stays at the front so the alphabetically-sorted scenes that
-        follow keep their own ordering.
+        follow keep their own ordering. Now Playing follows Random when a media
+        player is configured.
         """
-        return [SCENE_RANDOM, *self._cached_options]
+        now_playing = self._now_playing_name()
+        return [SCENE_RANDOM, *([now_playing] if now_playing else []), *self._cached_options]
 
     @property
     def extra_state_attributes(self):
@@ -303,6 +336,15 @@ class ChameleonLight(LightEntity):
             attrs["last_error"] = self._last_error
         if self._failed_lights:
             attrs["failed_lights"] = self._failed_lights
+
+        if self._media_player is not None:
+            attrs["media_player"] = self._media_player
+            if self._effect == NOW_PLAYING_EFFECT:
+                player = self.hass.states.get(self._media_player)
+                title = player.attributes.get("media_title") if player else None
+                artist = player.attributes.get("media_artist") if player else None
+                if title:
+                    attrs["now_playing"] = f"{artist} - {title}" if artist else title
 
         return attrs
 
@@ -367,6 +409,7 @@ class ChameleonLight(LightEntity):
 
     async def _do_turn_off(self) -> None:
         """Inner turn-off, runs under ``self._lock``."""
+        self._stop_now_playing()
         manager = self._get_animation_manager()
         if manager:
             await manager.stop(self._entry.entry_id)
@@ -476,6 +519,109 @@ class ChameleonLight(LightEntity):
                 self._failed_lights = {k: v for k, v in self._failed_lights.items() if k != entity_id}
                 self.async_write_ha_state()
 
+    # ── Now Playing ──────────────────────────────────────────────────────
+
+    async def _enter_now_playing(self, tracker: NowPlayingTracker) -> None:
+        """Start following the media player's album art.
+
+        Runs under ``self._lock``. Remembers the scene to fall back to, then
+        applies the current cover; with nothing playing, falls back at once.
+        """
+        candidate = self._effect if self._effect is not None else self._last_effect
+        if candidate is not None and candidate != NOW_PLAYING_EFFECT:
+            self._fallback_effect = candidate
+
+        key = tracker.current_cover_key()
+        if key is None:
+            tracker.stop()
+            player = tracker.media_player
+            self._last_error = f"{player} not found" if self.hass.states.get(player) is None else f"Nothing playing on {player}"
+            _LOGGER.warning(self._last_error)
+            await self._fall_back()
+            return
+
+        tracker.start(self._on_cover_changed, self._on_now_playing_ended)
+        self._effect = NOW_PLAYING_EFFECT
+        self._last_effect = NOW_PLAYING_EFFECT
+        self._latest_cover_key = key
+        await self._apply_cover(tracker)
+
+    async def _apply_cover(self, tracker: NowPlayingTracker) -> None:
+        """Fetch the current cover and apply its palette.
+
+        Fetch or extraction failures keep the current colours and the mode;
+        only the player's state decides when to leave Now Playing.
+        """
+        image = await tracker.async_fetch_cover()
+        if image is None:
+            self._last_error = f"Couldn't fetch cover art from {tracker.media_player}"
+            _LOGGER.warning(self._last_error)
+            return
+
+        animated = self._uses_animation()
+        colors = await self._extract_palette(image, animated)
+        if not colors:
+            self._last_error = f"Couldn't read cover art from {tracker.media_player}"
+            _LOGGER.warning(self._last_error)
+            return
+
+        result = await self._apply_palette(colors, animated)
+        self._record_effect_result(NOW_PLAYING_EFFECT, self._now_playing_name() or NOW_PLAYING_PREFIX, result, animated)
+
+    async def _fall_back(self) -> None:
+        """Leave Now Playing for the scene active before it (Random if none)."""
+        self._stop_now_playing()
+        self._effect = None
+        await self._apply_effect(self._fallback_effect or SCENE_RANDOM)
+
+    @callback
+    def _on_cover_changed(self, cover_key: str) -> None:
+        """Tracker callback: a new cover is showing. Work runs under the lock."""
+        self._latest_cover_key = cover_key
+        self._entry.async_create_task(self.hass, self._async_handle_cover(cover_key))
+
+    async def _async_handle_cover(self, cover_key: str) -> None:
+        async with self._lock:
+            tracker = self._now_playing
+            if tracker is None or not self._is_on or self._effect != NOW_PLAYING_EFFECT:
+                return
+            if cover_key != self._latest_cover_key:
+                return  # superseded by a newer track skip
+            self._last_error = None
+            self._failed_lights = {}
+            await self._apply_cover(tracker)
+            self.async_write_ha_state()
+
+    @callback
+    def _on_now_playing_ended(self) -> None:
+        """Tracker callback: grace period expired with nothing playing."""
+        self._entry.async_create_task(self.hass, self._async_handle_now_playing_ended())
+
+    async def _async_handle_now_playing_ended(self) -> None:
+        async with self._lock:
+            if not self._is_on or self._effect != NOW_PLAYING_EFFECT:
+                return
+            _LOGGER.info("Playback ended on %s; returning to %s", self._media_player, self._fallback_effect or SCENE_RANDOM)
+            await self._fall_back()
+            self.async_write_ha_state()
+
+    @callback
+    def _async_media_player_changed(self, event: Event[EventStateChangedData]) -> None:
+        """Refresh our state when the player is renamed or, in Now Playing, the track changes.
+
+        The effect name embeds the player's friendly name and ``now_playing``
+        shows the track; other player updates (volume, position) are ignored.
+        """
+        old_state = event.data["old_state"]
+        new_state = event.data["new_state"]
+        watched = ["friendly_name"]
+        if self._effect == NOW_PLAYING_EFFECT:
+            watched += ["media_title", "media_artist"]
+        old_values = [old_state.attributes.get(a) if old_state else None for a in watched]
+        new_values = [new_state.attributes.get(a) if new_state else None for a in watched]
+        if old_values != new_values:
+            self.async_write_ha_state()
+
     # ── Public API for sibling entities ──────────────────────────────────
 
     async def async_reapply_current_scene(self) -> None:
@@ -514,6 +660,13 @@ class ChameleonLight(LightEntity):
         if effect == SCENE_OFF:
             await self.async_turn_off()
             return
+
+        tracker = self._now_playing
+        if tracker is not None and effect in (NOW_PLAYING_EFFECT, self._now_playing_name()):
+            await self._enter_now_playing(tracker)
+            return
+
+        self._stop_now_playing()
 
         if effect == SCENE_RANDOM:
             if not self._cached_options:
@@ -603,6 +756,7 @@ class ChameleonLight(LightEntity):
 
     async def _apply_manual_color(self, rgb_color: RGBColor) -> None:
         """Apply a single RGB color directly to all underlying lights."""
+        self._stop_now_playing()
         manager = self._get_animation_manager()
         if manager:
             await manager.stop(self._entry.entry_id)

@@ -248,28 +248,28 @@ class TestLightFriendlyName:
 
     def test_with_friendly_name(self, hass: MagicMock):
         """Uses friendly_name when present."""
-        from custom_components.chameleon.helpers import _get_light_friendly_name
+        from custom_components.chameleon.helpers import get_friendly_name
 
         mock_state = MagicMock()
         mock_state.attributes = {"friendly_name": "My Lamp"}
         hass.states.get.return_value = mock_state
 
-        assert _get_light_friendly_name(hass, "light.my_lamp") == "My Lamp"
+        assert get_friendly_name(hass, "light.my_lamp") == "My Lamp"
 
     def test_fallback_without_state(self, hass: MagicMock):
         """Falls back to a title-cased object_id when no state exists."""
-        from custom_components.chameleon.helpers import _get_light_friendly_name
+        from custom_components.chameleon.helpers import get_friendly_name
 
         hass.states.get.return_value = None
 
-        assert _get_light_friendly_name(hass, "light.bedroom_lamp") == "Bedroom Lamp"
+        assert get_friendly_name(hass, "light.bedroom_lamp") == "Bedroom Lamp"
 
     def test_fallback_without_friendly_name_attr(self, hass: MagicMock):
         """Falls back when state exists but has no friendly_name."""
-        from custom_components.chameleon.helpers import _get_light_friendly_name
+        from custom_components.chameleon.helpers import get_friendly_name
 
         mock_state = MagicMock()
         mock_state.attributes = {}
         hass.states.get.return_value = mock_state
 
-        assert _get_light_friendly_name(hass, "light.kitchen_strip") == "Kitchen Strip"
+        assert get_friendly_name(hass, "light.kitchen_strip") == "Kitchen Strip"

@@ -37,6 +37,8 @@ ATTR_MODE: Final = "mode"
 # Special scene options
 SCENE_OFF: Final = "Off"  # Turn off all lights
 SCENE_RANDOM: Final = "Random"  # Pick a random scene
+NOW_PLAYING_EFFECT: Final = "__now_playing__"  # Internal marker; display name is built from the player
+NOW_PLAYING_PREFIX: Final = "Now Playing"  # Display: "Now Playing - <player friendly name>"
 
 # Color extraction
 DEFAULT_COLOR_COUNT: Final = 8  # Number of colors to extract for palette

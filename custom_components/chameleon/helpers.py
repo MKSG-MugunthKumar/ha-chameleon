@@ -81,7 +81,7 @@ def get_chameleon_device_name(hass: HomeAssistant, light_entities: list[str]) ->
             return f"Chameleon {area.name}"
 
     # Otherwise, use the first light's friendly name
-    first_light_name = _get_light_friendly_name(hass, light_entities[0])
+    first_light_name = get_friendly_name(hass, light_entities[0])
     _LOGGER.debug(
         "No common area found, using first light name: %s",
         first_light_name,
@@ -121,8 +121,8 @@ def _get_entity_area_id(
     return None
 
 
-def _get_light_friendly_name(hass: HomeAssistant, entity_id: str) -> str:
-    """Get a friendly name for a light entity.
+def get_friendly_name(hass: HomeAssistant, entity_id: str) -> str:
+    """Get a friendly name for an entity (lights, media players).
 
     Args:
         hass: Home Assistant instance
@@ -179,7 +179,7 @@ def get_entry_title(hass: HomeAssistant, light_entities: list[str]) -> str:
             return area.name
 
     # Otherwise, use the first light's friendly name
-    return _get_light_friendly_name(hass, light_entities[0])
+    return get_friendly_name(hass, light_entities[0])
 
 
 def get_entity_base_name(hass: HomeAssistant, light_entities: list[str]) -> str:
