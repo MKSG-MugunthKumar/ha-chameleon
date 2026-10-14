@@ -9,107 +9,113 @@
 
 # Chameleon
 
-**Extract colors from images and apply them to your RGB lights.**
+**Color your lights from images and album art.**
 
-Chameleon is a custom component for [Home Assistant](https://www.home-assistant.io/) that automatically extracts colors from images and applies them to your lights. Perfect for creating ambient lighting that matches your favorite photos, artwork, or movie posters.
+Chameleon is a custom integration for [Home Assistant](https://www.home-assistant.io/) that extracts a color palette from an image and spreads it across a group of RGB lights - statically, or as a slow, continuous fade through the palette. Drop photos, artwork, or posters into a folder and each one becomes a scene. Link a media player and the room follows the album cover of whatever is playing.
 
 ## Features
 
-- **Image-based scenes**: Drop images in a folder, Chameleon auto-discovers them as scenes
-- **Multi-light support**: Distribute extracted colors across multiple lights
-- **Color palette extraction**: Uses advanced color extraction for vibrant, representative colors
-- **Animation mode**: Cycle through colors from an image
-- **Native HA integration**: Works with the built-in select entity UI
-
-## Screenshots
-
-![Integration Setup](docs/images/integration-setup.png)
-_Configure your RGB lights in the setup flow_
-
-![Dashboard Card](docs/images/dashboard-card.png)
-_Control scenes, brightness, and animation from your dashboard_
+- **One light entity per room** - `light.chameleon_*` behaves like any HA light: on/off, brightness, color picker, and an effect list. Works with stock Tile, Mushroom, and Bubble cards; no custom card needed.
+- **Image scenes as effects** - every image in `/config/www/chameleon/` shows up in the light's effect list, plus `Random`.
+- **Palette across lights** - each member light gets its own color from the image's palette.
+- **Animated or static** - a transition slider (0-10 s) sets the fade per color; `0` applies the palette once. Lights move in sync or staggered.
+- **Now Playing** - follow a media player's album art; pause holds, stopping returns to your scene.
+- **Mains-aware** - when a room's power is cut, the Chameleon light goes unavailable; when power returns, every bulb is put back on its scene color.
+- **Reconfigure in place** - add or remove member lights, or link a media player, without losing entity IDs or customizations.
 
 ## Installation
 
-### HACS (Recommended)
+### HACS (recommended)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=MKSG-MugunthKumar&repo=ha-chameleon&category=integration)
 
 1. Open HACS in Home Assistant
-2. Click the three dots menu → Custom repositories
-3. Add this repository URL with category "Integration"
+2. Three-dots menu → **Custom repositories**
+3. Add this repository URL with category **Integration**
 4. Search for "Chameleon" and install
 5. Restart Home Assistant
 
-### Manual Installation
+Requires Home Assistant 2024.11 or newer.
 
-1. Copy the `custom_components/chameleon` folder to your `config/custom_components/` directory
+### Manual
+
+1. Copy `custom_components/chameleon` into your `config/custom_components/` directory
 2. Restart Home Assistant
 
-## Configuration
+## Setup
 
-1. Go to **Settings** → **Devices & Services** → **Add Integration**
-2. Search for "Chameleon"
-3. Select the RGB light(s) you want to control
-4. Add images to `/config/www/chameleon/`
+1. **Settings → Devices & Services → Add Integration → Chameleon**
+2. Pick the RGB light(s) for one room or zone
+3. Optionally set the default transition and link the room's media player
+4. Add images to `/config/www/chameleon/` (created on first setup)
 
-That's it! A select entity will be created that shows all available scenes.
+Each Chameleon entry creates three entities, named after the room (or the first light):
+
+| Entity                                     | What it does                                                                      |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
+| `light.chameleon_<name>`                   | The room's light: on/off, brightness, color, and the effect (scene) list          |
+| `number.chameleon_<name>_transition`       | Fade duration per color, 0-10 s. `0` = static, anything above animates            |
+| `select.chameleon_<name>_transition_style` | `synchronized` (all lights change together) or `staggered` (each on its own beat) |
+
+To change the lights or the media player later: **Settings → Devices & Services → Chameleon → ⋮ → Reconfigure**. Entity IDs, names, areas, and automations stay intact.
 
 ## Usage
 
-### Adding Scenes
+### Adding scenes
 
-Drop image files into `/config/www/chameleon/`:
+Drop images into `/config/www/chameleon/` (`.jpg`, `.jpeg`, `.png`). File names become scene names - underscores and hyphens turn into spaces, title case applied:
 
-```
+```text
 /config/www/chameleon/
 ├── sunset_vibes.jpg      → "Sunset Vibes"
 ├── ocean-blue.png        → "Ocean Blue"
-├── forest_morning.jpg    → "Forest Morning"
-└── movie_poster.png      → "Movie Poster"
+└── forest_morning.jpg    → "Forest Morning"
 ```
 
-Filenames are automatically converted to scene names (underscores/hyphens become spaces, title case applied).
+Then run the **`chameleon.refresh_scenes`** action (Developer Tools → Actions), or reload the integration, to pick them up.
 
-### Example Images
+Starter images are in [`examples/images/`](examples/images/):
 
-We've included some example images to get you started. Copy them from [`examples/images/`](examples/images/) to your `/config/www/chameleon/` folder:
+| Image                    | Palette                     | Good for          |
+| ------------------------ | --------------------------- | ----------------- |
+| `beach sunset.jpg`       | Warm oranges, pinks, golds  | Relaxing evenings |
+| `dusk.jpg`               | Soft purples, blues, pinks  | Calm twilight     |
+| `blue waters.jpg`        | Cool blues, teals           | Serene, focused   |
+| `greenery.jpg`           | Natural greens, earth tones | Fresh, organic    |
+| `greenish blue lake.jpg` | Teal, aqua, green           | Tranquil          |
+| `abstract green.jpg`     | Vibrant greens              | Modern, energetic |
+| `artistic purple.jpg`    | Deep purples, violets       | Creative, moody   |
 
-| Image                    | Palette                     | Best For                   |
-| ------------------------ | --------------------------- | -------------------------- |
-| `beach sunset.jpg`       | Warm oranges, pinks, golds  | Relaxing evening ambiance  |
-| `dusk.jpg`               | Soft purples, blues, pinks  | Calm twilight mood         |
-| `blue waters.jpg`        | Cool blues, teals           | Serene, focused atmosphere |
-| `greenery.jpg`           | Natural greens, earth tones | Fresh, organic feel        |
-| `greenish blue lake.jpg` | Teal, aqua, green           | Tranquil nature vibe       |
-| `abstract green.jpg`     | Vibrant greens              | Modern, artistic energy    |
-| `artistic purple.jpg`    | Deep purples, violets       | Creative, moody ambiance   |
+### Picking a scene
 
-All example images are from [Unsplash](https://unsplash.com) and free to use.
+Open the Chameleon light from any card and choose an **effect**: a scene name, or `Random`.
 
-### Selecting Scenes
+- **Turn off** stops any animation and switches the member lights off.
+- **Turn on** (no options) brings back the last scene, or `Random` if there wasn't one.
+- **Picking a color** in the color picker overrides the scene and sends that color to every member light. Picking an effect clears the override.
+- **Brightness** applies live, including mid-animation.
 
-Use the select entity in:
+### Transition and style
 
-- Home Assistant UI (entity card, more-info dialog)
-- Automations
-- Scripts
-- Voice assistants
+The transition slider is the fade time for each color, in seconds:
+
+- **0** - static: the palette is applied once, one color per light.
+- **0.1-1 s** - snappy; parties and emphasis.
+- **1-5 s** - visibly moving ambience (default 5 s).
+- **5-10 s** - a slow drift you barely notice.
+
+`synchronized` moves every light to the next color together; `staggered` gives each light a random head start so the room shimmers instead of pulsing.
 
 ### Now Playing (album art)
 
-Link a media player to a Chameleon light during setup, or later via **Settings → Devices &
-Services → Chameleon → ⋮ → Reconfigure**. Pick the player in the same room: in a multi-room
-setup each Chameleon follows its own room.
+Link a media player during setup or via Reconfigure - pick the player in the **same room**; in a multi-room audio setup each Chameleon follows its own room.
 
 The light then lists a `Now Playing - <player name>` effect. Pick it from any light card:
 
-- The lights take their colours from the current album cover, using your transition and
-  transition style like any scene.
+- The lights take their colors from the current album cover, with your transition and style, like any scene.
 - A new album repaints the lights; tracks from the same album don't.
-- Pausing keeps the colours. When the player goes idle or off for 30 seconds, the light returns
-  to the scene it showed before (Random if none).
-- Picking another effect, a colour, or turning the light off stops following the player.
+- Pausing keeps the colors. When the player is idle or off for 30 seconds, the light returns to the scene it showed before (`Random` if none).
+- Picking another effect, a color, or turning the light off stops following the player.
 
 ```yaml
 action: light.turn_on
@@ -119,425 +125,233 @@ data:
   effect: "Now Playing - Lounge"
 ```
 
-The effect name follows the player's friendly name; automations that name it need updating if
-you rename the player.
+The effect name follows the player's friendly name, so automations that name it need updating if you rename the player.
 
-### Example Dashboard Card
+### When lights lose power
 
-Chameleon exposes a single **light entity** (`light.chameleon_*`) that drops into any standard HA light card — Tile, Mushroom Light, Bubble Card, etc. The light's effect dropdown is the scene picker, brightness is native, and the color preview reflects the active scene's dominant color.
+Chameleon follows the same rule as HA's light groups: the Chameleon light stays **available while any member light is reachable**, and goes **unavailable when all of them are** - typically because the room's mains is switched off. The `unavailable_lights` attribute lists which members are offline.
+
+Offline lights are skipped quietly (no log spam). When a light comes back it picks up where the room is: animated scenes pull it back in step within about a second, and static scenes and manual colors are re-sent to it, so it doesn't stay on its power-on warm white.
+
+### Dashboard cards
+
+Any light card works. A stock Tile card:
 
 ```yaml
 type: tile
-entity: light.chameleon_bedroom_lamp
+entity: light.chameleon_bedroom
+features:
+  - type: light-brightness
 ```
 
-**Complete control card** (light + companions for transition and style):
+With the transition controls alongside:
 
 ```yaml
 type: vertical-stack
 cards:
   - type: tile
-    entity: light.chameleon_bedroom_lamp
+    entity: light.chameleon_bedroom
     features:
       - type: light-brightness
-      - type: light-color-temp # optional — RGB color picker also works
   - type: entities
     entities:
-      - entity: number.chameleon_bedroom_lamp_transition
+      - entity: number.chameleon_bedroom_transition
         name: Transition (0 = static)
-      - entity: select.chameleon_bedroom_lamp_transition_style
+      - entity: select.chameleon_bedroom_transition_style
         name: Style
 ```
 
-**Mushroom Light Card example** (a popular custom card that handles effects beautifully):
+[Bubble Card](https://github.com/Clooos/Bubble-Card) can put the scene picker right on the button with `select_attribute: effect_list` (see [#7](https://github.com/MKSG-MugunthKumar/ha-chameleon/issues/7) for a full example).
+
+### Actions
+
+Stock light actions cover almost everything:
 
 ```yaml
-type: custom:mushroom-light-card
-entity: light.chameleon_bedroom_lamp
-show_brightness_control: true
-show_color_control: true
-collapsible_controls: true
-```
-
-> **Note**: Replace `bedroom_lamp` with your light's base name. Entity IDs follow the pattern:
->
-> - `light.chameleon_{light_name}` — primary entity. Brightness, color preview, and effect dropdown (the scene list) live here.
-> - `number.chameleon_{light_name}_transition` — fade duration per color, in seconds. **0** = static (no animation). Any value > 0 enables continuous smooth fades between scene colors.
-> - `select.chameleon_{light_name}_transition_style` — `synchronized` (all lights change together) or `staggered` (each light independently with random phase offsets).
->
-> After adding or removing image files in `/config/www/chameleon/`, refresh the scene list with the **`chameleon.refresh_scenes`** action (Developer Tools → Actions, or call from an automation). The list is also refreshed automatically when the integration is reloaded (Settings → Devices & Services → Chameleon → ⋯ → Reload).
->
-> **Manual color override**: picking a color via the card's color picker bypasses the scene system and applies that color directly to all underlying lights. Picking a scene from the effect dropdown clears the override.
-
-### State Attributes
-
-The light entity exposes useful attributes for templates and dashboards:
-
-| Attribute             | Description                                                                                                                                                                                                |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `light_entities`      | List of configured underlying light entity IDs                                                                                                                                                             |
-| `light_count`         | Number of configured lights                                                                                                                                                                                |
-| `applied_colors`      | Dict of entity_id → RGB color (populated for static scenes and manual color picks; empty during animation)                                                                                                 |
-| `extracted_palette`   | Raw output from ColorThief — a list of `[R, G, B]` triples representing the most prominent colors in the image, ordered by dominance (most common first). Use `extracted_palette \| length` for the count. |
-| `dominant_color`      | First (most-dominant) palette entry as `[R, G, B]`. Single representative color for the scene.                                                                                                             |
-| `dominant_color_hex`  | Same color in `#RRGGBB` form — drop directly into `background:` styles in cards.                                                                                                                           |
-| `dominant_hue`        | Hue of the dominant color, 0–360°. Useful for "warm vs cool" template branches (warm ≈ 0–60 + 300–360, cool ≈ 180–270).                                                                                    |
-| `dominant_saturation` | Saturation of the dominant color, 0–1. Vivid vs muted (>0.6 vivid, <0.3 washed-out).                                                                                                                       |
-| `dominant_value`      | Value (brightness) of the dominant color, 0–1. Bright vs dark scene.                                                                                                                                       |
-| `manual_color`        | `[R, G, B]` of the user-picked color when in manual-color mode. Absent when an effect is active.                                                                                                           |
-| `last_scene_change`   | ISO timestamp of last scene change (for automation triggers)                                                                                                                                               |
-| `is_animating`        | Whether animation is currently running                                                                                                                                                                     |
-| `last_error`          | Error message if last operation failed (cleared on success)                                                                                                                                                |
-| `failed_lights`       | Dict of failed lights with error messages                                                                                                                                                                  |
-| `unavailable_lights`  | Member lights that are currently unreachable (`unavailable`/`unknown`). The Chameleon light itself goes unavailable only when every member is listed here, e.g. the room's mains is off.                   |
-| `media_player`        | Linked media player entity ID (only when one is configured)                                                                                                                                                |
-| `now_playing`         | `Artist - Title` while following the music                                                                                                                                                                 |
-
-### Service Actions
-
-Two integration-specific actions: `chameleon.apply_scene` and `chameleon.refresh_scenes`. For everything else, use stock HA actions (`light.turn_on`, `number.set_value`, `select.select_option`) directly on the Chameleon entities.
-
-```yaml
-# Apply a scene programmatically (uses current brightness and speed)
-action: chameleon.apply_scene
-target:
-  entity_id: light.chameleon_bedroom_lamp
-data:
-  scene_name: "Sunset Vibes"
-```
-
-```yaml
-# Apply a scene with brightness and speed bundled atomically.
-# Use speed > 0 to ensure animation runs; speed = 0 to apply statically.
-action: chameleon.apply_scene
-target:
-  entity_id: light.chameleon_bedroom_lamp
-data:
-  scene_name: "Movie Night"
-  brightness: 30
-  speed: 0
-```
-
-```yaml
-# Equivalently with stock light.turn_on (light entity has native effect support)
+# Apply a scene
 action: light.turn_on
 target:
-  entity_id: light.chameleon_bedroom_lamp
+  entity_id: light.chameleon_bedroom
 data:
   effect: "Sunset Vibes"
-  brightness: 200
+  brightness_pct: 80
 ```
 
 ```yaml
-# Pick a manual color (bypasses scenes; applies directly to underlying lights)
+# Manual color (bypasses scenes)
 action: light.turn_on
 target:
-  entity_id: light.chameleon_bedroom_lamp
+  entity_id: light.chameleon_bedroom
 data:
   rgb_color: [255, 100, 50]
 ```
 
 ```yaml
-# Drive the transition slider with stock HA action
+# Change the transition
 action: number.set_value
 target:
-  entity_id: number.chameleon_bedroom_lamp_transition
+  entity_id: number.chameleon_bedroom_transition
 data:
   value: 2.5
 ```
 
+Chameleon adds two actions of its own:
+
 ```yaml
-# Re-scan the image directory after dropping new files in /config/www/chameleon/
+# Apply a scene with brightness (0-100, 0 = off) and transition (0 = static)
+# set in the same call, so it renders at those values directly
+action: chameleon.apply_scene
+target:
+  entity_id: light.chameleon_bedroom
+data:
+  scene_name: "Movie Night"
+  brightness: 30
+  transition: 0
+```
+
+```yaml
+# Re-scan /config/www/chameleon/ after adding or removing images
 action: chameleon.refresh_scenes
 ```
 
-## Multi-Light Setup
+### State attributes
 
-When configuring multiple lights:
+| Attribute             | Description                                                                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `light_entities`      | Member light entity IDs                                                                                                             |
+| `light_count`         | Number of member lights                                                                                                             |
+| `applied_colors`      | Member → RGB color, for static scenes and manual colors (empty while animating)                                                     |
+| `extracted_palette`   | The image's palette as `[R, G, B]` triples, most dominant first                                                                     |
+| `dominant_color`      | Most dominant palette color, `[R, G, B]`                                                                                            |
+| `dominant_color_hex`  | Same, as `#RRGGBB` - handy for card `background:` styles                                                                            |
+| `dominant_hue`        | Hue of the dominant color, 0-360°. Warm ≈ 0-60 and 300-360, cool ≈ 180-270                                                          |
+| `dominant_saturation` | Saturation, 0-1 (above 0.6 vivid, below 0.3 washed out)                                                                             |
+| `dominant_value`      | Brightness of the dominant color, 0-1                                                                                               |
+| `manual_color`        | `[R, G, B]` while a manual color is active                                                                                          |
+| `last_scene_change`   | ISO timestamp of the last scene change, for automation triggers                                                                     |
+| `is_animating`        | Whether the animation loop is running                                                                                               |
+| `last_error`          | Message from the last failed operation (cleared on the next successful one)                                                         |
+| `failed_lights`       | Member → error message from the last apply                                                                                          |
+| `unavailable_lights`  | Members currently unreachable (`unavailable`/`unknown`). The Chameleon light goes unavailable only when every member is listed here |
+| `media_player`        | Linked media player, when one is configured                                                                                         |
+| `now_playing`         | `Artist - Title` while following the music                                                                                          |
 
-1. Chameleon extracts a color palette from the image
-2. Each light receives a different color from the palette
-3. Colors are distributed in the order lights are configured
+## Recorder and database size
 
-This creates a cohesive but varied lighting atmosphere.
+While a scene animates, every **member light** changes state once per color - at a 5 s transition that's about 17,000 state changes per light per day. The Chameleon light itself only changes when the scene, brightness, or availability changes.
 
-## Error Handling
-
-Chameleon provides detailed feedback when things go wrong:
-
-- **Light not found**: Entity doesn't exist in HA
-- **Light unavailable**: Device is offline
-- **No RGB support**: Light doesn't support color mode
-- **Service call failed**: HA service error
-
-Check the `last_error` and `failed_lights` attributes for details.
-
-## Database Considerations
-
-Chameleon uses an instant transition (`0.1s`) for snappy color changes — animation mode creates one state change per color tick. At 1 color/second that's **86,400 database writes per day** per light.
-
-### Recommended: Recorder Exclusion
-
-Exclude animated lights from the recorder to prevent database bloat:
+If you animate for long periods, exclude the member lights from the recorder:
 
 ```yaml
 # configuration.yaml
 recorder:
   exclude:
     entities:
-      - light.your_animated_light
-    entity_globs:
-      - light.chameleon_*
+      - light.bedroom_lamp_left
+      - light.bedroom_lamp_right
 ```
-
-### Transition
-
-The transition slider runs from `0` to `10` seconds (default: 5s). The slider has 100 positions, so dragging is precise. Each value is the duration of one color fade — the light is always mid-transition between colors when an animation is running.
-
-- **0** — Static. Animation is disabled and the scene is applied as a single color (or palette across multiple lights).
-- **0.1–1s** — Snappy, energetic. Good for parties, music sync, or emphasizing a single light.
-- **1–5s** — Dynamic but watchable. The default range for "ambient lighting that changes."
-- **5–10s** — Subtle, slow drift. Best for background ambience.
-
-Regardless of transition length, consider recorder exclusion for animated lights — even at 5s, that's ~17,000 state changes per day per light.
 
 ## Troubleshooting
 
-### Select Entity Shows No Options
+### The effect list has no scenes
 
-1. Verify `/config/www/chameleon/` directory exists
-2. Check file extensions are `.jpg`, `.jpeg`, or `.png`
-3. Check logs: `logger.logs.custom_components.chameleon: debug`
-4. Call `chameleon.refresh_scenes` from Developer Tools → Actions, or reload the integration to trigger a directory rescan
+1. Check `/config/www/chameleon/` exists and holds `.jpg`, `.jpeg`, or `.png` files
+2. Run `chameleon.refresh_scenes`, or reload the integration
+3. Turn on debug logs:
 
-### Colors Look Wrong
+   ```yaml
+   logger:
+     logs:
+       custom_components.chameleon: debug
+   ```
 
-- Ensure images are RGB format (not CMYK)
-- Test with a simple, high-contrast image first
-- Check if the light supports full RGB range
+### A light isn't changing color
 
-### Light Not Responding
+Look at `failed_lights` and `last_error` on the Chameleon light:
 
-Check the `failed_lights` attribute:
+- **does not exist** - the member entity was renamed or removed; fix it with Reconfigure
+- **is unavailable / unknown** - the device is offline (see `unavailable_lights`)
+- **does not support RGB** - the light has no color mode Chameleon can drive (RGB, RGBW, RGBWW, HS, or XY)
+- **Failed to apply color** - the light's integration rejected the call; check the HA log
 
-- `not_found`: Verify the entity ID is correct
-- `unavailable`: Check the device is online
-- `no_rgb_support`: Use an RGB-capable light
-- `service_call_failed`: Check HA logs for details
+### The Chameleon light is unavailable
+
+Every member light is offline. Restore power or connectivity to at least one of them.
+
+### Now Playing doesn't start, or switches back to a scene
+
+- `last_error: Nothing playing on media_player.…` - the player had no cover when you picked the effect. Start the music first.
+- `last_error: Couldn't fetch cover art …` - the player's integration didn't return the image. Chameleon keeps the current colors and retries on the next album.
+- Radio and line-in usually have no artwork; Chameleon holds the last colors while they play.
+
+### Colors look off
+
+- Try a simple, high-contrast image first
+- Prefer RGB images over CMYK
+- Some bulbs render saturated colors poorly at low brightness
+
+## What's new
+
+- **3.1** - Now Playing (album art from a linked media player); member-light availability and power-loss recovery; Reconfigure for member lights and media player.
+- **3.0** - Single light entity with scenes as effects; transition slider and transition style replace the old speed and mode controls.
+
+## Roadmap
+
+- **Pulsate brightness** ([#6](https://github.com/MKSG-MugunthKumar/ha-chameleon/issues/6)) - breathe brightness between the set level and a lower one, per light
+- **Animation patterns and presets** - wave and other patterns beyond the color fade
+- **Scene presets with multiple images**, **time-based scene selection**, **HA scene integration**
+- **Alternative extractors** - Haishoku or k-means as options alongside ColorThief
+- **Spatial sampling** - map image regions (left/center/right) to lights by position
+
+## Development
+
+### Architecture
+
+| Module                | Responsibility                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `__init__.py`         | Entry setup/unload, services, config entry migrations                                                              |
+| `config_flow.py`      | Setup and Reconfigure flows                                                                                        |
+| `const.py`            | Constants and config keys                                                                                          |
+| `light.py`            | The Chameleon light: effects, brightness, manual color, palette apply paths, member availability, Now Playing mode |
+| `number.py`           | Transition slider (0 = static)                                                                                     |
+| `select.py`           | Transition style (synchronized / staggered)                                                                        |
+| `animations.py`       | `AnimationController` per entry: one task per light, skips unreachable lights while keeping phase                  |
+| `now_playing.py`      | `NowPlayingTracker`: watches one media player, cover changes, 30 s grace timer, cover bytes                        |
+| `light_controller.py` | Light service calls, reachability, per-light results                                                               |
+| `color_extractor.py`  | Palette and dominant color from image files or bytes (ColorThief)                                                  |
+| `helpers.py`          | Device, entity, and entry naming                                                                                   |
+
+Design notes live in [CLAUDE.md](CLAUDE.md) (architectural patterns: per-entity lock, cancel-safe service calls, derived state) and in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+
+### Workflow
+
+```bash
+make setup        # dev tools + pre-commit hooks
+make test         # pytest with coverage
+make dev-start    # local HA dev server (also dev-restart, dev-logs, dev-stop)
+make deploy       # rsync to your HA (set REMOTE_HOST and REMOTE_PATH in .env)
+```
+
+Lint, format, and type checks run as pre-commit hooks on every commit and in CI. Commits follow Conventional Commits.
+
+### Translations
+
+English only for now. See [CONTRIBUTING.md](CONTRIBUTING.md#translations) to add a language.
+
+### Contributing
+
+Contributions welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). Fork, branch, commit (the hooks run the checks), and open a pull request.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT - see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-Inspired by:
-
-- [adaptive-lighting](https://github.com/basnijholt/adaptive-lighting) - For multi-instance config flow patterns
-- [scenery](https://github.com/home-assistant/core) - For select entity patterns
-
-Libraries used:
-
-- [ColorThief](https://github.com/fengsp/color-thief-py) - Color extraction library
-
-## Chameleon Integration - Developer Guide
-
-Are you a developer? Continue reading for architecture details, error handling strategies, and development workflow.
-
-## Architecture Overview
-
-### Module Responsibilities
-
-| Module                | Responsibility                                                                                                               |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `__init__.py`         | Integration entry point, setup/unload, services, config-entry migration                                                      |
-| `config_flow.py`      | UI configuration flow                                                                                                        |
-| `const.py`            | All constants and configuration keys                                                                                         |
-| `light.py`            | Primary entity — scene/effect picker, brightness, on/off, manual color override, palette extraction, animation orchestration |
-| `select.py`           | Animation mode select (synchronized vs staggered)                                                                            |
-| `number.py`           | Transition slider (with zero-value = static mode)                                                                            |
-| `light_controller.py` | Shared light control logic (availability, color application)                                                                 |
-| `color_extractor.py`  | Color extraction from images                                                                                                 |
-| `animations.py`       | Single AnimationController + AnimationManager (one per entry); transition = speed for smooth fades                           |
-
-### Key Design Pattern: Separation of Concerns
-
-The `light_controller.py` module contains all light control logic shared between:
-
-- The Chameleon light entity (`light.py`)
-- Service handlers (`chameleon.apply_scene`, `chameleon.refresh_scenes`)
-
-This separation ensures consistent behavior and error handling across all light control operations.
-
-## Error Handling Strategy
-
-### Light Availability Checks
-
-Before applying colors, the integration checks:
-
-1. **Entity exists**: Light entity is registered in HA
-2. **Entity available**: Not in `unavailable` or `unknown` state
-3. **RGB support**: Light supports RGB, RGBW, RGBWW, HS, or XY color modes
-
-### Error Tracking
-
-Errors are tracked in entity state attributes:
-
-- `last_error`: Human-readable error message (cleared on success)
-- `failed_lights`: Dict of entity_id → error message
-
-This allows:
-
-- UI display of errors
-- Automation triggers based on failures
-- Debugging without checking logs
-
-### Failure Modes
-
-| Scenario           | Behavior                                     |
-| ------------------ | -------------------------------------------- |
-| All lights succeed | Update `current_option`, clear errors        |
-| All lights fail    | Keep previous `current_option`, set error    |
-| Partial failure    | Update `current_option`, track failed lights |
-
-### Production Testing
-
-- Test with real Philips Hue or RGB lights
-- Verify color accuracy
-- Test animation smoothness
-- Monitor DB writes (check recorder size growth)
-
-## Common Issues
-
-### Image Directory Not Found
-
-- Ensure `/config/www/chameleon/` exists
-- Integration should create it on first setup if missing
-
-### Colors Look Wrong
-
-- Check image format (RGB vs RGBA)
-- Verify color space conversions
-- Test with known-good images first
-
-### Select Entity Not Showing Options
-
-- Check image directory scan logic
-- Verify file extensions (jpg, png)
-- Check logs for errors (set `logger.logs.custom_components.chameleon: debug`)
-
-### Light Not Responding
-
-Check the `failed_lights` attribute for detailed error messages:
-
-- `not_found`: Entity doesn't exist
-- `unavailable`: Device offline
-- `no_rgb_support`: Light doesn't support colors
-- `service_call_failed`: HA service error
-
-## Development Workflow
-
-### Quick Start
-
-```bash
-make dev-setup    # First time: install tools + start server
-make dev-start    # Start server (if already set up)
-make dev-restart  # Reload code changes
-make dev-logs     # View logs
-```
-
-### Deploy to Production (Your own HA instance)
-
-```bash
-# Sync to production server
-rsync -avz --delete \
-  ~/ha-chameleon/custom_components/chameleon/ \
-  your-server:/config/custom_components/chameleon/
-
-# Restart production HA
-ssh your-server "docker restart homeassistant"
-
-# Monitor logs
-ssh your-server "docker logs -f homeassistant"
-```
-
----
-
-## Translations
-
-Chameleon currently supports **English only**. We'd love help translating to other languages!
-
-If you're fluent in another language and want to contribute translations, check out our [Contributing Guide](CONTRIBUTING.md#translations) for instructions.
-
-## Contributing
-
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-Quick start:
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit — pre-commit hooks run lint, format, and type checks automatically
-4. Submit a pull request
-
----
-
-## Future Features
-
-### Minor Tweaks
-
-- [x] **Native light entity** - `light.chameleon_*` is the primary entity. Scenes are exposed as HA effects via `LightEntityFeature.EFFECT`; brightness and on/off are native; manual color picks bypass scenes and apply directly. Drops into stock Tile/Mushroom/Bubble cards as a single first-class light.
-- [x] **Off via `turn_off`** - The light's `turn_off` replaces the previous "Off" scene. Bare `turn_on` after off restores the last applied scene (Random if none).
-- [x] **Transition slider** - Runtime-adjustable `number.{light}_transition` (0–10s, 0 = static). Doubles as the per-color fade duration.
-- [x] **Smooth color fades** - Animation loop sends `transition = speed` so each color change fades over the full interval. No more snap-and-hold jumps.
-- [x] **Sync/staggered styles** - `select.{light}_transition_style` lets each light cycle in lockstep or with organic random phase offsets
-- [x] **Random scene** - Available as the `Random` effect; picks a random scene from available images
-- [x] **Dominant color attributes** - `dominant_color`, `dominant_color_hex`, plus HSV decomposition for template-driven dashboards and "warm vs cool" automations
-- [x] **Extracted palette** - Full color palette exposed in state attributes
-- [x] **Refresh scenes service** - `chameleon.refresh_scenes` rescans the image directory on demand (no polling)
-- [x] **Last scene timestamp** - For automation triggers
-- [x] **Semantic zero-value for speed** - Speed 0 = static (no animation loop). Removes the need for a separate on/off switch.
-- [x] **Reconfigure lights** - Settings → Devices & Services → Chameleon → Reconfigure adds or removes member lights in place, keeping entity IDs and customisations.
-
-### Member Light Availability (Next)
-
-Typical case: the mains for a room is switched off, so every member light drops off the network at once.
-
-- [ ] **Group-style availability** - `light.chameleon_*` goes unavailable only when _all_ member lights are unavailable (same rule as HA's `light.group`). Derived from member states via a state-change listener, not a stored flag.
-- [ ] **`unavailable_lights` attribute** - Lists which members are offline, so stock cards show what is going on.
-- [ ] **Skip offline lights in the animation loop** - No service calls to unavailable members; with all members offline the loop idles and resumes on its own.
-- [ ] **Re-apply on recovery** - When a member comes back, push its current scene color immediately (also covers static scenes, where no loop would otherwise correct the bulb's power-on color). Must take the per-entity lock so it can't race a `turn_off`.
-- [ ] **Log once per transition** - One info line when a member drops out and one when it returns, replacing per-tick warnings (HA `log-when-unavailable` rule).
-
-### Media Player Integration
-
-- [x] **Album art color extraction** - `Now Playing - <player>` effect colors the lights from the linked player's current cover
-- [x] **Media player selector** - Optional media player per Chameleon entry (setup or Reconfigure); one room, one player
-- [x] **Auto-update on track change** - Repaints when the cover changes (once per album, not per track)
-- [x] **Fallback to static scene** - Pause holds; idle/off for 30 s returns to the scene active before
-
-### Animation Features
-
-- [ ] Animation patterns (fade, pulse, wave)
-- [ ] Animation presets
-- [ ] Scene presets with multiple images
-- [ ] Time-based scene selection
-- [ ] Integration with HA scenes
-
-### Alternative Color Extraction Libraries
-
-- [ ] **Haishoku** - Python library, alternative to ColorThief
-- [ ] **K-means clustering** - Custom implementation using scikit-learn or numpy
-- [ ] **Configurable extractor** - Allow users to choose extraction method
-
-### Spatial Sampling (Experimental)
-
-- [ ] **Grid-based region sampling** - Sample colors from different image regions
-- [ ] **Left/center/right distribution** - Assign region colors to lights by position
-- [ ] **Custom region mapping** - User-defined light-to-region assignments
-
----
+- [adaptive-lighting](https://github.com/basnijholt/adaptive-lighting) - multi-instance config flow patterns
+- [ColorThief](https://github.com/fengsp/color-thief-py) - color extraction
+- Example images from [Unsplash](https://unsplash.com)
 
 ## Author
 
-Created by [@mk_sg](https://mastodon.social/@mk_sg) - Follow for updates and other projects!
+Created by [@mk_sg](https://mastodon.social/@mk_sg) - follow for updates and other projects!
