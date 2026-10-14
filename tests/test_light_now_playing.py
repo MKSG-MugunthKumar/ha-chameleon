@@ -181,7 +181,7 @@ class TestFallbackTarget:
         await entity.async_reapply_current_scene()
 
         assert entity._fallback_effect == "Sunset"
-        assert tracker.start.call_count == 2
+        assert tracker.start.call_count == 1  # re-applied in place, not re-entered
         assert entity._effect == NOW_PLAYING_EFFECT
 
     @pytest.mark.asyncio
@@ -339,3 +339,89 @@ class TestAttributes:
     def test_no_media_player_attr_without_player(self, hass: MagicMock):
         entity, _, _ = _make_light(hass, media_player=None)
         assert "media_player" not in entity.extra_state_attributes
+
+
+class TestReviewFixes:
+    """Findings from the final whole-branch review."""
+
+    @pytest.mark.asyncio
+    async def test_failed_switch_keeps_now_playing_consistent(self, hass: MagicMock):
+        """Unknown effect while in Now Playing must not leave the mode with no tracker."""
+        entity, tracker, _ = _make_light(hass)
+        await entity._apply_effect(NP_NAME)
+        tracker.stop.reset_mock()
+        entity._find_image_for_scene = AsyncMock(return_value=None)
+
+        await entity._apply_effect("Nope")
+
+        tracker.stop.assert_not_called()
+        assert entity._effect == NOW_PLAYING_EFFECT
+
+    @pytest.mark.asyncio
+    async def test_failed_manual_color_does_not_leave_stale_mode(self, hass: MagicMock):
+        entity, tracker, _ = _make_light(hass)
+        entity._light_controller = MagicMock()
+        entity._light_controller.apply_colors_to_lights = AsyncMock(
+            return_value=ApplyColorsResult([LightResult("light.one", False, error_message="unavailable")])
+        )
+        await entity._apply_effect(NP_NAME)
+
+        await entity._apply_manual_color((1, 2, 3))
+
+        tracker.stop.assert_called()
+        assert entity._effect is None
+
+    @pytest.mark.asyncio
+    async def test_reapply_without_art_holds_mode(self, hass: MagicMock):
+        """Slider crosses zero while radio (no art) plays: re-apply current colours, stay."""
+        entity, tracker, _ = _make_light(hass)
+        entity._is_on = True
+        entity._effect = "Sunset"
+        await entity._apply_effect(NP_NAME)
+        entity._extracted_palette = PALETTE
+        tracker.current_cover_key.return_value = None
+        entity._apply_palette.reset_mock()
+
+        await entity.async_reapply_current_scene()
+
+        assert entity._effect == NOW_PLAYING_EFFECT
+        assert entity._last_error is None
+        assert tracker.start.call_count == 1  # not restarted: grace timer untouched
+        entity._apply_palette.assert_awaited_once_with(PALETTE, False)
+
+    @pytest.mark.asyncio
+    async def test_reapply_with_art_refetches_without_restart(self, hass: MagicMock):
+        entity, tracker, _ = _make_light(hass)
+        entity._is_on = True
+        await entity._apply_effect(NP_NAME)
+
+        await entity.async_reapply_current_scene()
+
+        assert tracker.async_fetch_cover.await_count == 2
+        assert tracker.start.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_work_after_removal_is_dropped(self, hass: MagicMock):
+        entity, tracker, _ = _make_light(hass)
+        entity._is_on = True
+        await entity._apply_effect(NP_NAME)
+        entity._latest_cover_key = "cover-2"
+
+        await entity.async_will_remove_from_hass()
+        await entity._async_handle_cover("cover-2")
+        await entity._async_handle_now_playing_ended()
+
+        assert tracker.async_fetch_cover.await_count == 1
+        entity._find_image_for_scene.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_off_effect_does_not_deadlock(self, hass: MagicMock):
+        """Pre-existing: turn_on(effect="Off") re-took the entity lock and hung."""
+        import asyncio
+
+        entity, _, _ = _make_light(hass, media_player=None)
+        entity._is_on = True
+
+        await asyncio.wait_for(entity.async_turn_on(effect="Off"), timeout=1)
+
+        assert entity._is_on is False

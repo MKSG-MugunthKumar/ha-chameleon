@@ -157,6 +157,7 @@ class ChameleonLight(LightEntity):
         self._now_playing = NowPlayingTracker(hass, media_player) if media_player else None
         self._fallback_effect: str | None = None  # scene to return to when playback ends
         self._latest_cover_key: str | None = None  # newest cover seen; older pending work is dropped
+        self._removed = False  # set on removal so in-flight scheduled work bails out
 
         # Diagnostics / palette
         self._extracted_palette: list[RGBColor] = []
@@ -233,13 +234,19 @@ class ChameleonLight(LightEntity):
         await self.async_refresh_options()
 
     async def async_will_remove_from_hass(self) -> None:
-        """Stop any animation and clear our registration."""
-        await super().async_will_remove_from_hass()
-        self._stop_now_playing()
+        """Stop any animation and clear our registration.
 
-        manager = self._get_animation_manager()
-        if manager:
-            await manager.stop(self._entry.entry_id)
+        Takes the lock so an in-flight cover/restore task finishes (or is
+        refused afterwards via ``_removed``) before the animation is stopped;
+        otherwise a late task could start an animation nobody can stop.
+        """
+        await super().async_will_remove_from_hass()
+        async with self._lock:
+            self._removed = True
+            self._stop_now_playing()
+            manager = self._get_animation_manager()
+            if manager:
+                await manager.stop(self._entry.entry_id)
 
         entry_data = _entry_data(self.hass, self._entry.entry_id)
         if entry_data.get("chameleon_light") is self:
@@ -389,6 +396,8 @@ class ChameleonLight(LightEntity):
             # Scene change — full re-apply.
             self._manual_color = None
             await self._apply_effect(effect)
+            if effect == SCENE_OFF:
+                return  # _do_turn_off already set the off state
         elif rgb_color is not None:
             # Manual color override — full re-apply.
             await self._apply_manual_color(tuple(rgb_color))
@@ -504,7 +513,7 @@ class ChameleonLight(LightEntity):
         turn_off and relight a lamp the user just switched off.
         """
         async with self._lock:
-            if not self._is_on:
+            if self._removed or not self._is_on:
                 return
             manager = self._get_animation_manager()
             if manager and manager.is_running(self._entry.entry_id):
@@ -568,6 +577,27 @@ class ChameleonLight(LightEntity):
         result = await self._apply_palette(colors, animated)
         self._record_effect_result(NOW_PLAYING_EFFECT, self._now_playing_name() or NOW_PLAYING_PREFIX, result, animated)
 
+    async def _reapply_now_playing(self, tracker: NowPlayingTracker) -> None:
+        """Re-apply Now Playing in the current static/animated mode without re-entering.
+
+        Re-entering would restart the tracker (resetting a running grace
+        timer) and fall back when the player momentarily has no art. Instead
+        re-fetch the cover if there is one, and otherwise re-apply the colours
+        already showing.
+        """
+        animated = self._uses_animation()
+        colors: list[RGBColor] = []
+        if tracker.current_cover_key() is not None:
+            image = await tracker.async_fetch_cover()
+            if image is not None:
+                colors = await self._extract_palette(image, animated)
+        if not colors:
+            colors = self._extracted_palette
+        if not colors:
+            return
+        result = await self._apply_palette(colors, animated)
+        self._record_effect_result(NOW_PLAYING_EFFECT, self._now_playing_name() or NOW_PLAYING_PREFIX, result, animated)
+
     async def _fall_back(self) -> None:
         """Leave Now Playing for the scene active before it (Random if none)."""
         self._stop_now_playing()
@@ -583,7 +613,7 @@ class ChameleonLight(LightEntity):
     async def _async_handle_cover(self, cover_key: str) -> None:
         async with self._lock:
             tracker = self._now_playing
-            if tracker is None or not self._is_on or self._effect != NOW_PLAYING_EFFECT:
+            if self._removed or tracker is None or not self._is_on or self._effect != NOW_PLAYING_EFFECT:
                 return
             if cover_key != self._latest_cover_key:
                 return  # superseded by a newer track skip
@@ -599,7 +629,7 @@ class ChameleonLight(LightEntity):
 
     async def _async_handle_now_playing_ended(self) -> None:
         async with self._lock:
-            if not self._is_on or self._effect != NOW_PLAYING_EFFECT:
+            if self._removed or not self._is_on or self._effect != NOW_PLAYING_EFFECT:
                 return
             _LOGGER.info("Playback ended on %s; returning to %s", self._media_player, self._fallback_effect or SCENE_RANDOM)
             await self._fall_back()
@@ -635,8 +665,11 @@ class ChameleonLight(LightEntity):
         async with self._lock:
             if not self._is_on:
                 return
+            tracker = self._now_playing
             if self._manual_color is not None:
                 await self._apply_manual_color(self._manual_color)
+            elif self._effect == NOW_PLAYING_EFFECT and tracker is not None and tracker.is_running:
+                await self._reapply_now_playing(tracker)
             elif self._effect is not None:
                 await self._apply_effect(self._effect)
 
@@ -658,15 +691,14 @@ class ChameleonLight(LightEntity):
         """Apply a scene effect by name (handles Random and Off specially)."""
         # "Off" via the service path is equivalent to turn_off.
         if effect == SCENE_OFF:
-            await self.async_turn_off()
+            # Already under self._lock: call the inner turn-off, not async_turn_off.
+            await self._do_turn_off()
             return
 
         tracker = self._now_playing
         if tracker is not None and effect in (NOW_PLAYING_EFFECT, self._now_playing_name()):
             await self._enter_now_playing(tracker)
             return
-
-        self._stop_now_playing()
 
         if effect == SCENE_RANDOM:
             if not self._cached_options:
@@ -689,8 +721,13 @@ class ChameleonLight(LightEntity):
             _LOGGER.error(self._last_error)
             return
 
+        # Only now does the new scene take over; a typo'd or missing scene above
+        # leaves Now Playing (if active) running untouched.
+        self._stop_now_playing()
         result = await self._apply_palette(colors, animated)
         self._record_effect_result(effect, effect, result, animated)
+        if self._effect == NOW_PLAYING_EFFECT:
+            self._effect = None  # tracker stopped and the new scene failed everywhere
 
     def _uses_animation(self) -> bool:
         """Return True when the runtime transition calls for the animation loop."""
@@ -783,6 +820,9 @@ class ChameleonLight(LightEntity):
             self._failed_lights = result.failed_lights
             self._last_scene_change = datetime.now()
             self._last_error = f"Partial failure: {result.failed_count}/{len(result.results)} lights failed"
+
+        if self._effect == NOW_PLAYING_EFFECT:
+            self._effect = None  # tracker stopped above and the color failed everywhere
 
     async def _apply_colors_static(self, colors: list[RGBColor], brightness: int) -> ApplyColorsResult:
         """Apply a palette statically: palette color by light index, no loop."""
