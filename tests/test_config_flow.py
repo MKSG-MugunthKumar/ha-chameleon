@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.chameleon.const import (
-    CONF_ANIMATION_SPEED,
     CONF_LIGHT_ENTITIES,
+    CONF_TRANSITION,
 )
 
 # Import mocked FlowResultType from conftest
@@ -16,6 +16,10 @@ from tests.conftest import FlowResultType
 
 # Use mocked SOURCE_USER constant
 SOURCE_USER = "user"
+
+# get_entry_title walks the area/device registries, which are bare MagicMocks
+# here; patch it at the config_flow import site and test it separately.
+TITLE_PATCH = "custom_components.chameleon.config_flow.get_entry_title"
 
 
 def _setup_config_flow(flow, hass):
@@ -28,7 +32,7 @@ def _setup_config_flow(flow, hass):
 
 
 class TestChameleonConfigFlow:
-    """Tests for ChameleonConfigFlow."""
+    """Tests for ChameleonConfigFlow user step."""
 
     @pytest.mark.asyncio
     async def test_form_shows_on_init(self, hass: MagicMock):
@@ -37,22 +41,6 @@ class TestChameleonConfigFlow:
 
         flow = ChameleonConfigFlow()
         _setup_config_flow(flow, hass)
-
-        # Patch async_show_form to capture what it's called with
-        # since the actual voluptuous schema with selectors is HA-specific
-        called_args = {}
-
-        def mock_async_show_form(step_id, data_schema, errors=None):
-            called_args["step_id"] = step_id
-            called_args["errors"] = errors
-            return {
-                "type": FlowResultType.FORM,
-                "step_id": step_id,
-                "data_schema": data_schema,
-                "errors": errors or {},
-            }
-
-        flow.async_show_form = mock_async_show_form
 
         result = await flow.async_step_user()
 
@@ -68,117 +56,66 @@ class TestChameleonConfigFlow:
         flow = ChameleonConfigFlow()
         _setup_config_flow(flow, hass)
 
-        # Mock the state for friendly name lookup
-        mock_state = MagicMock()
-        mock_state.attributes = {"friendly_name": "Bedroom Lamp"}
-        hass.states.get.return_value = mock_state
-
-        result = await flow.async_step_user(
-            user_input={
-                CONF_LIGHT_ENTITIES: ["light.bedroom_lamp"],
-                CONF_ANIMATION_SPEED: 5,
-            }
-        )
+        with patch(TITLE_PATCH, return_value="Bedroom Lamp"):
+            result = await flow.async_step_user(
+                user_input={
+                    CONF_LIGHT_ENTITIES: ["light.bedroom_lamp"],
+                    CONF_TRANSITION: 5,
+                }
+            )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["title"] == "Bedroom Lamp"
         assert result["data"][CONF_LIGHT_ENTITIES] == ["light.bedroom_lamp"]
-        assert result["data"][CONF_ANIMATION_SPEED] == 5
+        assert result["data"][CONF_TRANSITION] == 5
+        flow.async_set_unique_id.assert_awaited_once_with("light.bedroom_lamp")
 
     @pytest.mark.asyncio
-    async def test_create_entry_multiple_lights(self, hass: MagicMock):
-        """Test creating entry with multiple lights."""
+    async def test_unique_id_is_order_independent(self, hass: MagicMock):
+        """The same set of lights in any order yields the same unique_id."""
         from custom_components.chameleon.config_flow import ChameleonConfigFlow
 
         flow = ChameleonConfigFlow()
         _setup_config_flow(flow, hass)
 
-        # Mock friendly names
-        def get_state(entity_id):
-            names = {
-                "light.one": "Light One",
-                "light.two": "Light Two",
-            }
-            mock_state = MagicMock()
-            mock_state.attributes = {"friendly_name": names.get(entity_id, entity_id)}
-            return mock_state
+        with patch(TITLE_PATCH, return_value="Lights"):
+            await flow.async_step_user(
+                user_input={
+                    CONF_LIGHT_ENTITIES: ["light.two", "light.one"],
+                    CONF_TRANSITION: 10,
+                }
+            )
 
-        hass.states.get.side_effect = get_state
+        flow.async_set_unique_id.assert_awaited_once_with("light.one_light.two")
 
-        result = await flow.async_step_user(
-            user_input={
-                CONF_LIGHT_ENTITIES: ["light.one", "light.two"],
-                CONF_ANIMATION_SPEED: 10,
-            }
-        )
 
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-        assert result["data"][CONF_ANIMATION_SPEED] == 10
+class TestLightFriendlyName:
+    """Tests for the helper that names a light for entry titles."""
 
-    @pytest.mark.asyncio
-    async def test_create_entry_many_lights(self, hass: MagicMock):
-        """Test creating entry with many lights shows abbreviated title."""
-        from custom_components.chameleon.config_flow import ChameleonConfigFlow
-
-        flow = ChameleonConfigFlow()
-        _setup_config_flow(flow, hass)
-
-        # Mock friendly name for first light
-        mock_state = MagicMock()
-        mock_state.attributes = {"friendly_name": "First Light"}
-        hass.states.get.return_value = mock_state
-
-        result = await flow.async_step_user(
-            user_input={
-                CONF_LIGHT_ENTITIES: [
-                    "light.one",
-                    "light.two",
-                    "light.three",
-                    "light.four",
-                ],
-                CONF_ANIMATION_SPEED: 5,
-            }
-        )
-
-        assert result["type"] == FlowResultType.CREATE_ENTRY
-
-    def test_get_light_name_with_friendly_name(self, hass: MagicMock):
-        """Test getting light name when friendly_name exists."""
-        from custom_components.chameleon.config_flow import ChameleonConfigFlow
-
-        flow = ChameleonConfigFlow()
-        flow.hass = hass
+    def test_with_friendly_name(self, hass: MagicMock):
+        """Uses friendly_name when present."""
+        from custom_components.chameleon.helpers import _get_light_friendly_name
 
         mock_state = MagicMock()
         mock_state.attributes = {"friendly_name": "My Lamp"}
         hass.states.get.return_value = mock_state
 
-        name = flow._get_light_name("light.my_lamp")
-        assert name == "My Lamp"
+        assert _get_light_friendly_name(hass, "light.my_lamp") == "My Lamp"
 
-    def test_get_light_name_fallback(self, hass: MagicMock):
-        """Test getting light name falls back to entity_id."""
-        from custom_components.chameleon.config_flow import ChameleonConfigFlow
+    def test_fallback_without_state(self, hass: MagicMock):
+        """Falls back to a title-cased object_id when no state exists."""
+        from custom_components.chameleon.helpers import _get_light_friendly_name
 
-        flow = ChameleonConfigFlow()
-        flow.hass = hass
-
-        # No state exists
         hass.states.get.return_value = None
 
-        name = flow._get_light_name("light.bedroom_lamp")
-        assert name == "Bedroom Lamp"
+        assert _get_light_friendly_name(hass, "light.bedroom_lamp") == "Bedroom Lamp"
 
-    def test_get_light_name_no_friendly_name_attr(self, hass: MagicMock):
-        """Test getting light name when state exists but no friendly_name."""
-        from custom_components.chameleon.config_flow import ChameleonConfigFlow
-
-        flow = ChameleonConfigFlow()
-        flow.hass = hass
+    def test_fallback_without_friendly_name_attr(self, hass: MagicMock):
+        """Falls back when state exists but has no friendly_name."""
+        from custom_components.chameleon.helpers import _get_light_friendly_name
 
         mock_state = MagicMock()
-        mock_state.attributes = {}  # No friendly_name
+        mock_state.attributes = {}
         hass.states.get.return_value = mock_state
 
-        name = flow._get_light_name("light.kitchen_strip")
-        assert name == "Kitchen Strip"
+        assert _get_light_friendly_name(hass, "light.kitchen_strip") == "Kitchen Strip"
