@@ -131,3 +131,35 @@ class TestRgbToHs:
         hue, sat = rgb_to_hs((255, 128, 128))
         assert hue == pytest.approx(0, abs=1)  # Still red hue
         assert 40 < sat < 60  # Approximately 50% saturation
+
+
+class TestExtractFromBytes:
+    """Album art arrives as bytes, not a file path."""
+
+    @pytest.mark.asyncio
+    async def test_palette_from_png_bytes(self):
+        import io
+        from unittest.mock import AsyncMock, MagicMock
+
+        from PIL import Image
+
+        from custom_components.chameleon.color_extractor import extract_color_palette, extract_dominant_color
+
+        # Left half pure red, right half pure blue
+        image = Image.new("RGB", (40, 20), (255, 0, 0))
+        image.paste((0, 0, 255), (20, 0, 40, 20))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        png = buffer.getvalue()
+
+        hass = MagicMock()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
+
+        palette = await extract_color_palette(hass, png, color_count=2)
+        dominant = await extract_dominant_color(hass, png)
+
+        assert len(palette) >= 2
+        assert all(len(c) == 3 for c in palette)
+        assert dominant is not None
+        # ColorThief quantises, so check the channel that dominates rather than exact values
+        assert max(dominant) in (dominant[0], dominant[2])

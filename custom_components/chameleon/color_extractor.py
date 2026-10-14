@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 from pathlib import Path
 
@@ -15,25 +16,35 @@ _LOGGER = logging.getLogger(__name__)
 type RGBColor = tuple[int, int, int]
 
 
-def _sync_extract_dominant_color(image_path: str, quality: int) -> RGBColor | None:
+def _open_image(image: str | bytes) -> str | io.BytesIO:
+    """Return something ColorThief can read: a path string or an in-memory file."""
+    return io.BytesIO(image) if isinstance(image, bytes) else image
+
+
+def _describe(image: Path | bytes) -> str:
+    """Short log-friendly description of an image source."""
+    return f"<{len(image)} bytes>" if isinstance(image, bytes) else str(image)
+
+
+def _sync_extract_dominant_color(image: str | bytes, quality: int) -> RGBColor | None:
     """Synchronous color extraction - runs in executor."""
     from colorthief import ColorThief
 
-    color_thief = ColorThief(image_path)
+    color_thief = ColorThief(_open_image(image))
     return color_thief.get_color(quality=quality)
 
 
-def _sync_extract_palette(image_path: str, color_count: int, quality: int) -> list[RGBColor]:
+def _sync_extract_palette(image: str | bytes, color_count: int, quality: int) -> list[RGBColor]:
     """Synchronous palette extraction - runs in executor."""
     from colorthief import ColorThief
 
-    color_thief = ColorThief(image_path)
+    color_thief = ColorThief(_open_image(image))
     return color_thief.get_palette(color_count=color_count, quality=quality)
 
 
 async def extract_dominant_color(
     hass: HomeAssistant,
-    image_path: Path,
+    image: Path | bytes,
     quality: int = DEFAULT_QUALITY,
 ) -> RGBColor | None:
     """
@@ -41,29 +52,29 @@ async def extract_dominant_color(
 
     Args:
         hass: Home Assistant instance (needed for executor)
-        image_path: Path to the image file
+        image: Path to an image file, or the image's raw bytes (e.g. album art)
         quality: Color extraction quality (1=highest, 10=fastest)
 
     Returns:
         RGB tuple (r, g, b) or None if extraction fails
     """
     try:
-        _LOGGER.debug("Extracting dominant color from %s", image_path)
+        _LOGGER.debug("Extracting dominant color from %s", _describe(image))
         color = await hass.async_add_executor_job(
             _sync_extract_dominant_color,
-            str(image_path),
+            image if isinstance(image, bytes) else str(image),
             quality,
         )
         _LOGGER.debug("Extracted dominant color: %s", color)
         return color
     except Exception as e:
-        _LOGGER.error("Failed to extract dominant color from %s: %s", image_path, e)
+        _LOGGER.error("Failed to extract dominant color from %s: %s", _describe(image), e)
         return None
 
 
 async def extract_color_palette(
     hass: HomeAssistant,
-    image_path: Path,
+    image: Path | bytes,
     color_count: int = DEFAULT_COLOR_COUNT,
     quality: int = DEFAULT_QUALITY,
 ) -> list[RGBColor]:
@@ -72,7 +83,7 @@ async def extract_color_palette(
 
     Args:
         hass: Home Assistant instance (needed for executor)
-        image_path: Path to the image file
+        image: Path to an image file, or the image's raw bytes (e.g. album art)
         color_count: Number of colors to extract
         quality: Color extraction quality (1=highest, 10=fastest)
 
@@ -80,17 +91,17 @@ async def extract_color_palette(
         List of RGB tuples, or empty list if extraction fails
     """
     try:
-        _LOGGER.debug("Extracting %d colors from %s", color_count, image_path)
+        _LOGGER.debug("Extracting %d colors from %s", color_count, _describe(image))
         colors = await hass.async_add_executor_job(
             _sync_extract_palette,
-            str(image_path),
+            image if isinstance(image, bytes) else str(image),
             color_count,
             quality,
         )
         _LOGGER.debug("Extracted %d colors: %s", len(colors), colors)
         return colors
     except Exception as e:
-        _LOGGER.error("Failed to extract color palette from %s: %s", image_path, e)
+        _LOGGER.error("Failed to extract color palette from %s: %s", _describe(image), e)
         return []
 
 
