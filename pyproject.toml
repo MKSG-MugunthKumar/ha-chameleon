@@ -24,7 +24,7 @@ version = "0.1.0"
 # These are installed by HA automatically, but listed here for IDE support
 dependencies = [
     "Pillow>=10.0.0",
-    "colorthief==0.2.1",
+    "colorthief>=0.2.1",
 ]
 
 # Development dependencies (install with: uv pip install -e ".[dev]")

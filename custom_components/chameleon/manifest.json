@@ -10,8 +10,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/MKSG-MugunthKumar/ha-chameleon/issues",
   "requirements": [
-    "colorthief==0.2.1",
-    "Pillow>=10.0.0"
+    "colorthief>=0.2.1"
   ],
   "version": "3.1.0"
 }
